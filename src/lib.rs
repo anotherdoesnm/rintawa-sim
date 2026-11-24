@@ -15,5 +15,6 @@ pub mod system;
 
 pub use driver::{Scenario, ScenarioActor, SimDriver, package_owner};
 pub use model::{
-    ActionKind, ActorView, PlannedAction, Policy, RoundReport, SimulationReport, WorldView,
+    ActionKind, ActorView, Aggressive, Cautious, Opportunist, PlannedAction, Policy,
+    PolicyDecision, RoundReport, SimulationReport, WorldView,
 };

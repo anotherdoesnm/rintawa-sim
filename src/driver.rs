@@ -1,6 +1,6 @@
 //! Deterministic round driver: scripted policies submit ordinary World commands.
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
 use rintawa_sdk::{
@@ -12,20 +12,31 @@ use rintawa_world::WorldCommand;
 use rintawa_world_runtime::{WorldRuntime, WorldRuntimeBuilder, WorldSnapshot};
 
 use crate::{
-    model::{ActorView, Policy, RoundReport, SimulationReport, WorldView},
+    model::{ActorView, Policy, PolicyDecision, RoundReport, SimulationReport, WorldView},
     schemas::{act_key, actor_key, property_definitions, runtime_schemas, seed_key, state_key},
     system::{ActPayload, ActSystem, ActionWire, SeedActor, SeedPayload, SeedSystem},
 };
 
 /// One actor declared by a scenario.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScenarioActor {
     /// Display name.
     pub name: String,
     /// Initial personal power.
     pub power: i64,
-    /// Scripted policy.
-    pub policy: Policy,
+    /// Decision policy, scripted today and model-driven later.
+    pub policy: Arc<dyn Policy>,
+}
+
+impl std::fmt::Debug for ScenarioActor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ScenarioActor")
+            .field("name", &self.name)
+            .field("power", &self.power)
+            .field("policy", &self.policy.name())
+            .finish()
+    }
 }
 
 /// Starting conditions of one run.
@@ -54,7 +65,7 @@ pub struct SimDriver {
 struct ActorRef {
     id: ItemId,
     name: String,
-    policy: Policy,
+    policy: Arc<dyn Policy>,
 }
 
 impl SimDriver {
@@ -90,7 +101,7 @@ impl SimDriver {
             .map(|actor| ActorRef {
                 id: ItemId::new(),
                 name: actor.name.clone(),
-                policy: actor.policy,
+                policy: Arc::clone(&actor.policy),
             })
             .collect();
 
@@ -150,13 +161,13 @@ impl SimDriver {
                 if !me.alive {
                     continue;
                 }
-                let policy = self
-                    .actors
-                    .iter()
-                    .find(|actor| actor.id == actor_id)
-                    .map(|actor| actor.policy)
-                    .unwrap_or(Policy::Cautious);
-                let planned = policy.decide(&view, &me);
+                let Some(actor) = self.actors.iter().find(|actor| actor.id == actor_id) else {
+                    continue;
+                };
+                let planned = match actor.policy.decide(&view, &me) {
+                    PolicyDecision::Act(planned) => planned,
+                    PolicyDecision::Abstain => continue,
+                };
                 let payload = serde_json::to_value(ActPayload {
                     state: self.state.to_string(),
                     actor: actor_id.to_string(),

@@ -1,8 +1,8 @@
 //! Command line entry point for one scripted simulation run.
 
-use std::{path::PathBuf, process::ExitCode};
+use std::{path::PathBuf, process::ExitCode, sync::Arc};
 
-use rintawa_sim::{Policy, Scenario, ScenarioActor, SimDriver};
+use rintawa_sim::{Aggressive, Cautious, Opportunist, Scenario, ScenarioActor, SimDriver};
 
 fn main() -> ExitCode {
     match run() {
@@ -47,17 +47,17 @@ fn run() -> anyhow::Result<()> {
             ScenarioActor {
                 name: String::from("kitten"),
                 power: 4,
-                policy: Policy::Aggressive,
+                policy: Arc::new(Aggressive),
             },
             ScenarioActor {
                 name: String::from("doe"),
                 power: 3,
-                policy: Policy::Opportunist,
+                policy: Arc::new(Opportunist),
             },
             ScenarioActor {
                 name: String::from("mart"),
                 power: 2,
-                policy: Policy::Cautious,
+                policy: Arc::new(Cautious),
             },
         ],
     };

@@ -42,13 +42,29 @@ Output is a JSON report: stability per round, current ruler, survivors and death
 
 ## Policies
 
-`Policy::Aggressive` takes the throne when it is strong enough and purges the
-weakest rival otherwise. `Policy::Cautious` prefers stability and only takes power
-in a calm world. `Policy::Opportunist` hoards power and then takes the throne.
+An actor's decisions come from a `Policy` trait:
+
+```rust
+pub trait Policy: Send + Sync {
+    fn name(&self) -> &str;
+    fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision;
+}
+```
+
+`PolicyDecision::Act(..)` submits one ordinary World command for this round;
+`PolicyDecision::Abstain` skips the turn, which is how a policy expresses "out of
+budget", "unsure" or "waiting for information". The world never sees the policy —
+the driver reads a consistent view, asks, and commits the result.
+
+Three scripted implementations ship as the baseline: `Aggressive` takes the throne
+when strong enough and purges the weakest rival otherwise, `Cautious` prefers
+stability, `Opportunist` hoards power then takes the throne.
 
 The baseline is deterministic: the same scenario produces the same report, which
 is checked by a test. That is the point — an LLM policy can only be judged against
-a reproducible scripted run.
+a reproducible scripted run, and it plugs into the same trait without touching the
+world, the schema or the systems. The policy seam is covered by tests that add a
+pacifist policy and an abstaining one from outside the crate.
 
 ## Status and limits
 
