@@ -209,9 +209,14 @@ impl WorldSystem for ActSystem {
             )));
         }
 
-        if matches!(state_data.rules, Rules::Strict) && state_data.stability == 0 {
+        // At zero stability the realm tolerates no politics, but sharing is what
+        // restores it, so that one action stays available.
+        if matches!(state_data.rules, Rules::Strict)
+            && state_data.stability == 0
+            && !matches!(payload.action, ActionWire::Share)
+        {
             return Err(SystemError::Rejected(String::from(
-                "stability is zero: no political action is accepted",
+                "stability is zero: only sharing power is accepted, no coup, purge or hoard",
             )));
         }
 
