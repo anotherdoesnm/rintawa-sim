@@ -12,7 +12,7 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "2", features = ["json", "socks-proxy"] }
 rintawa-sdk = { git = "https://github.com/martrtr/rintawa.git", rev = "1e5b82e1c57462067942ed6dc8c396f82a785589" }
 rintawa-world = { git = "https://github.com/martrtr/rintawa.git", rev = "1e5b82e1c57462067942ed6dc8c396f82a785589" }
 rintawa-storage = { git = "https://github.com/martrtr/rintawa.git", rev = "1e5b82e1c57462067942ed6dc8c396f82a785589" }

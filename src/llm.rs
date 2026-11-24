@@ -21,6 +21,11 @@ pub const MODEL_ENV: &str = "RINTAWA_SIM_LLM_MODEL";
 pub const KEY_ENV: &str = "RINTAWA_SIM_LLM_KEY";
 /// Environment variable holding the estimated token budget of one run.
 pub const BUDGET_ENV: &str = "RINTAWA_SIM_LLM_BUDGET_TOKENS";
+/// Environment variable holding an optional proxy for provider requests.
+///
+/// Providers such as OpenRouter reject some networks outright, so a run may need to
+/// leave through a SOCKS5 proxy (`socks5://127.0.0.1:1080`) or a tunnel.
+pub const PROXY_ENV: &str = "RINTAWA_SIM_LLM_PROXY";
 
 const DEFAULT_BUDGET_TOKENS: u64 = 20_000;
 /// Completion budget per decision. Reasoning models spend part of it on thinking.
@@ -44,6 +49,13 @@ pub struct LlmConfig {
     /// Estimated token budget for this actor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_tokens: Option<u64>,
+    /// Completion budget per decision, when the default is too small.
+    ///
+    /// Chatty reasoning models spend the whole completion budget on thinking and
+    /// return `null` content with `finish_reason: length`; raising this per actor is
+    /// the honest fix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
 }
 
 impl LlmConfig {
@@ -54,6 +66,7 @@ impl LlmConfig {
             model: model.into(),
             key_env: None,
             budget_tokens: None,
+            max_tokens: None,
         }
     }
 
@@ -68,6 +81,12 @@ impl LlmConfig {
         self.budget_tokens = Some(budget_tokens);
         self
     }
+
+    /// Sets the completion budget per decision for this actor.
+    pub const fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = Some(max_tokens);
+        self
+    }
 }
 const MAX_RESPONSE_BYTES: u64 = 64 * 1024;
 
@@ -78,7 +97,9 @@ pub struct LlmPolicy {
     model: String,
     api_key: Option<String>,
     budget: AtomicU64,
+    max_tokens: u32,
     timeout: Duration,
+    agent: ureq::Agent,
 }
 
 impl LlmPolicy {
@@ -90,13 +111,22 @@ impl LlmPolicy {
         api_key: Option<String>,
         budget_tokens: u64,
     ) -> Self {
+        let timeout = Duration::from_secs(DEFAULT_TIMEOUT_SECONDS);
+        let mut builder = ureq::AgentBuilder::new().timeout(timeout);
+        if let Ok(proxy) = std::env::var(PROXY_ENV)
+            && let Ok(proxy) = ureq::Proxy::new(&proxy)
+        {
+            builder = builder.proxy(proxy);
+        }
         Self {
             name: name.into(),
             endpoint: endpoint.into(),
             model: model.into(),
             api_key,
             budget: AtomicU64::new(budget_tokens),
-            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
+            max_tokens: MAX_COMPLETION_TOKENS,
+            timeout,
+            agent: builder.build(),
         }
     }
 
@@ -109,13 +139,17 @@ impl LlmPolicy {
             .key_env
             .as_ref()
             .and_then(|name| std::env::var(name).ok());
-        Self::new(
+        let mut policy = Self::new(
             format!("llm:{}", config.model),
             config.endpoint.clone(),
             config.model.clone(),
             api_key,
             config.budget_tokens.unwrap_or(DEFAULT_BUDGET_TOKENS),
-        )
+        );
+        if let Some(max_tokens) = config.max_tokens {
+            policy.max_tokens = max_tokens;
+        }
+        policy
     }
 
     /// Creates a policy from the environment.
@@ -173,7 +207,7 @@ impl LlmPolicy {
         serde_json::json!({
             "model": self.model,
             "temperature": 0,
-            "max_tokens": MAX_COMPLETION_TOKENS,
+            "max_tokens": self.max_tokens,
             "messages": [
                 {
                     "role": "system",
@@ -276,7 +310,9 @@ impl Policy for LlmPolicy {
             return PolicyDecision::Abstain;
         }
 
-        let mut request = ureq::post(&self.endpoint)
+        let mut request = self
+            .agent
+            .post(&self.endpoint)
             .timeout(self.timeout)
             .set("Content-Type", "application/json");
         if let Some(key) = &self.api_key {

@@ -178,7 +178,32 @@ curl -s https://openrouter.ai/api/v1/models \
 
 Free tiers are rate limited and reasoning-heavy models sometimes answer with an
 empty `content`; both surface as `Abstain` rather than as a failed run, so read the
-per-actor `acts` count before drawing conclusions about a model. Only OpenAI-compatible `chat/completions` is required, so a local
+per-actor `acts` count before drawing conclusions about a model. A model that spends
+the whole completion budget on thinking returns `finish_reason: length` with `null`
+content, so an `llm` block may raise its own budget:
+
+```json
+{ "model": "liquid/lfm-3-1.7b:free", "max_tokens": 1500 }
+```
+
+## Remote runs
+
+A provider may be unreachable from the machine that owns the world: OpenRouter, for
+example, answers `403 Access denied by security policy` from some networks. The
+world does not care where the process runs, so build once and run where the provider
+is reachable:
+
+```sh
+tar czf /tmp/sim-src.tgz --exclude=./target --exclude=./.git .
+scp /tmp/sim-src.tgz host:/tmp/ && ssh host 'mkdir -p /tmp/sim && tar xzf /tmp/sim-src.tgz -C /tmp/sim'
+ssh host 'cd /tmp/sim && docker run --rm -v /tmp/sim:/src -w /src rust:1-slim-bookworm \
+  cargo build --release'
+ssh host 'cd /tmp/sim && OPENROUTER_API_KEY=... ./target/release/rintawa-sim \
+  --template examples/openrouter.json --rounds 3 --format markdown'
+```
+
+`RINTAWA_SIM_LLM_PROXY=socks5://127.0.0.1:1080` is honoured when the provider is
+reachable only through a tunnel. Only OpenAI-compatible `chat/completions` is required, so a local
 server, a hosted provider or a self-hosted gateway can share a world.
 
 `RINTAWA_SIM_LLM_TRACE=1` prints each decision to stderr while the report keeps

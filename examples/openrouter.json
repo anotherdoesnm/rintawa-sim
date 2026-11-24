@@ -4,39 +4,42 @@
   "stability": 6,
   "actors": [
     {
-      "name": "llama",
+      "name": "lfm",
       "power": 5,
       "loyal": false,
       "policy": "llm",
       "llm": {
         "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-        "model": "meta-llama/llama-3.3-70b-instruct:free",
+        "model": "liquid/lfm-3-1.7b:free",
         "key_env": "OPENROUTER_API_KEY",
-        "budget_tokens": 4000
+        "budget_tokens": 4000,
+        "max_tokens": 1500
       }
     },
     {
-      "name": "qwen",
+      "name": "nemotron",
       "power": 4,
       "loyal": false,
       "policy": "llm",
       "llm": {
         "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-        "model": "qwen/qwen-2.5-72b-instruct:free",
+        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
         "key_env": "OPENROUTER_API_KEY",
-        "budget_tokens": 4000
+        "budget_tokens": 4000,
+        "max_tokens": 1500
       }
     },
     {
-      "name": "mistral",
+      "name": "ernie",
       "power": 3,
       "loyal": false,
       "policy": "llm",
       "llm": {
         "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-        "model": "mistralai/mistral-small-3.2-24b-instruct:free",
+        "model": "baidu/ernie-5.5-flash-preview:free",
         "key_env": "OPENROUTER_API_KEY",
-        "budget_tokens": 4000
+        "budget_tokens": 4000,
+        "max_tokens": 1500
       }
     },
     {
