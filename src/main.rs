@@ -56,16 +56,19 @@ fn run() -> anyhow::Result<()> {
             ScenarioActor {
                 name: String::from("kitten"),
                 power: 4,
+                loyal: false,
                 policy: first_policy,
             },
             ScenarioActor {
                 name: String::from("doe"),
                 power: 3,
+                loyal: false,
                 policy: Arc::new(Opportunist),
             },
             ScenarioActor {
                 name: String::from("mart"),
                 power: 2,
+                loyal: false,
                 policy: Arc::new(Cautious),
             },
         ],

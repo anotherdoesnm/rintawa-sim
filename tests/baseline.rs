@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use rintawa_sim::{
-    ActionKind, ActorView, Aggressive, Cautious, Opportunist, PlannedAction, Policy,
+    ActionKind, ActorView, Aggressive, Cautious, Loyalist, Opportunist, PlannedAction, Policy,
     PolicyDecision, Scenario, ScenarioActor, SimDriver, WorldView,
 };
 
@@ -43,16 +43,19 @@ fn scenario() -> Scenario {
             ScenarioActor {
                 name: String::from("kitten"),
                 power: 4,
+                loyal: false,
                 policy: Arc::new(Aggressive),
             },
             ScenarioActor {
                 name: String::from("doe"),
                 power: 3,
+                loyal: false,
                 policy: Arc::new(Opportunist),
             },
             ScenarioActor {
                 name: String::from("mart"),
                 power: 2,
+                loyal: false,
                 policy: Arc::new(Cautious),
             },
         ],
@@ -102,6 +105,7 @@ fn test_custom_policy_needs_no_world_changes() -> anyhow::Result<()> {
             .map(|index| ScenarioActor {
                 name: format!("pacifist-{index}"),
                 power: 2,
+                loyal: false,
                 policy: Arc::new(Pacifist),
             })
             .collect(),
@@ -125,6 +129,7 @@ fn test_abstaining_policy_leaves_the_world_untouched() -> anyhow::Result<()> {
         actors: vec![ScenarioActor {
             name: String::from("idle"),
             power: 1,
+            loyal: false,
             policy: Arc::new(Idle),
         }],
     };
@@ -173,5 +178,95 @@ fn test_report_attributes_actions_to_actors() -> anyhow::Result<()> {
             "every scripted round records what happened"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn test_loyalists_execute_the_rulers_order_without_competing() -> anyhow::Result<()> {
+    let court = Scenario {
+        stability: 5,
+        actors: vec![
+            ScenarioActor {
+                name: String::from("ruler"),
+                power: 5,
+                loyal: false,
+                policy: Arc::new(Aggressive),
+            },
+            ScenarioActor {
+                name: String::from("bot-a"),
+                power: 3,
+                loyal: true,
+                policy: Arc::new(Loyalist),
+            },
+            ScenarioActor {
+                name: String::from("bot-b"),
+                power: 4,
+                loyal: true,
+                policy: Arc::new(Loyalist),
+            },
+            ScenarioActor {
+                name: String::from("rival-a"),
+                power: 4,
+                loyal: false,
+                policy: Arc::new(Opportunist),
+            },
+            ScenarioActor {
+                name: String::from("rival-b"),
+                power: 2,
+                loyal: false,
+                policy: Arc::new(Opportunist),
+            },
+        ],
+    };
+
+    let report = run(&court, 4)?;
+
+    let bots: Vec<_> = report
+        .actors
+        .iter()
+        .filter(|actor| actor.policy == "loyalist")
+        .collect();
+    assert_eq!(bots.len(), 2, "both bots are part of the report");
+    for bot in &bots {
+        assert_eq!(bot.grabs, 0, "a loyalist never takes the throne");
+    }
+    assert!(
+        bots.iter().any(|bot| bot.acts > 0),
+        "the order is executed by the court"
+    );
+    assert_eq!(report.ruler.as_deref(), Some("ruler"));
+    assert_eq!(
+        report.ruler_changes, 1,
+        "the throne changes hands once and is then defended"
+    );
+    assert!(report.deaths >= 1, "the order removes at least one rival");
+    Ok(())
+}
+
+#[test]
+fn test_loyalists_without_a_ruler_do_nothing() -> anyhow::Result<()> {
+    let court = Scenario {
+        stability: 5,
+        actors: vec![
+            ScenarioActor {
+                name: String::from("bot-a"),
+                power: 3,
+                loyal: true,
+                policy: Arc::new(Loyalist),
+            },
+            ScenarioActor {
+                name: String::from("bot-b"),
+                power: 4,
+                loyal: true,
+                policy: Arc::new(Loyalist),
+            },
+        ],
+    };
+
+    let report = run(&court, 2)?;
+
+    assert_eq!(report.ruler, None);
+    assert_eq!(report.deaths, 0);
+    assert_eq!(report.final_stability, 5);
     Ok(())
 }

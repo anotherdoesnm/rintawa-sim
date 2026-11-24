@@ -28,6 +28,8 @@ pub struct SeedActor {
     pub name: String,
     /// Initial personal power.
     pub power: i64,
+    /// Whether the actor executes orders instead of competing for power.
+    pub loyal: bool,
 }
 
 /// Payload of one act command.
@@ -71,6 +73,7 @@ struct ActorData {
     name: String,
     power: i64,
     alive: bool,
+    loyal: bool,
 }
 
 fn parse_item(value: &str, field: &str) -> SystemResult<ItemId> {
@@ -136,7 +139,12 @@ impl WorldSystem for SeedSystem {
             transaction.push_change(StateChange::SetProperty {
                 item: id,
                 key: actor_key(),
-                data: json!({ "name": actor.name, "power": actor.power, "alive": true }),
+                data: json!({
+                    "name": actor.name,
+                    "power": actor.power,
+                    "alive": true,
+                    "loyal": actor.loyal
+                }),
             });
         }
         Ok(transaction)

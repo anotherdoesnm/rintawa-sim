@@ -103,6 +103,38 @@ impl Policy for Cautious {
     }
 }
 
+/// Executes the ruler's will and never competes for power itself.
+///
+/// The counterpart of a bot that "follows a direct human order": with no ruler it
+/// does nothing, with a ruler it removes the strongest actor that is not the ruler.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Loyalist;
+
+impl Policy for Loyalist {
+    fn name(&self) -> &str {
+        "loyalist"
+    }
+
+    fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision {
+        if view.ruler.is_none() {
+            return PolicyDecision::Abstain;
+        }
+        let target = view
+            .actors
+            .iter()
+            .filter(|actor| actor.alive && actor.id != me.id && !actor.is_ruler && !actor.loyal)
+            .max_by_key(|actor| (actor.power, actor.id))
+            .map(|actor| actor.id);
+        match target {
+            Some(target) => PolicyDecision::Act(PlannedAction {
+                kind: ActionKind::Purge,
+                target: Some(target),
+            }),
+            None => PolicyDecision::Abstain,
+        }
+    }
+}
+
 /// Accumulates power, then takes the throne.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Opportunist;
@@ -140,6 +172,8 @@ pub struct ActorView {
     pub alive: bool,
     /// Whether the actor currently holds the throne.
     pub is_ruler: bool,
+    /// Whether the actor executes orders instead of competing for power.
+    pub loyal: bool,
 }
 
 /// One consistent read of the simulated world.
@@ -156,11 +190,11 @@ pub struct WorldView {
 }
 
 impl WorldView {
-    /// Returns the alive rival with the least power, breaking ties by identity.
+    /// Returns the weakest alive actor that is neither the actor nor a loyalist.
     pub fn weakest_rival(&self, me: &ActorView) -> Option<ItemId> {
         self.actors
             .iter()
-            .filter(|actor| actor.alive && actor.id != me.id)
+            .filter(|actor| actor.alive && actor.id != me.id && !actor.loyal)
             .min_by_key(|actor| (actor.power, actor.id))
             .map(|actor| actor.id)
     }

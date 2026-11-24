@@ -26,6 +26,8 @@ pub struct ScenarioActor {
     pub name: String,
     /// Initial personal power.
     pub power: i64,
+    /// Whether the actor executes orders instead of competing for power.
+    pub loyal: bool,
     /// Decision policy, scripted today and model-driven later.
     pub policy: Arc<dyn Policy>,
 }
@@ -36,6 +38,7 @@ impl std::fmt::Debug for ScenarioActor {
             .debug_struct("ScenarioActor")
             .field("name", &self.name)
             .field("power", &self.power)
+            .field("loyal", &self.loyal)
             .field("policy", &self.policy.name())
             .finish()
     }
@@ -130,6 +133,7 @@ impl SimDriver {
                     id: actor.id.to_string(),
                     name: config.name.clone(),
                     power: config.power,
+                    loyal: config.loyal,
                 })
                 .collect(),
         })?;
@@ -333,6 +337,10 @@ impl SimDriver {
                     .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false),
                 is_ruler: ruler == Some(actor.id),
+                loyal: raw
+                    .get("loyal")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
             });
         }
         actors.sort_by_key(|actor| actor.id.into_bytes());

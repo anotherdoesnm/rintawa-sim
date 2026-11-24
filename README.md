@@ -86,9 +86,17 @@ pub trait Policy: Send + Sync {
 budget", "unsure" or "waiting for information". The world never sees the policy —
 the driver reads a consistent view, asks, and commits the result.
 
-Three scripted implementations ship as the baseline: `Aggressive` takes the throne
+Four scripted implementations ship as the baseline: `Aggressive` takes the throne
 when strong enough and purges the weakest rival otherwise, `Cautious` prefers
-stability, `Opportunist` hoards power then takes the throne.
+stability, `Opportunist` hoards power then takes the throne, and `Loyalist`
+executes the ruler's will without ever competing for power.
+
+Loyalty is world state, not a policy opinion: every actor carries a `loyal`
+boolean in `sim.actor@1`. A loyalist with no ruler abstains, a loyalist with a
+ruler removes the strongest actor that is neither the ruler nor another loyalist,
+and the other policies treat loyalists as allies rather than purge targets. That
+is the "bots following a direct order" case from the chat, and it is checked by a
+test that also proves a loyalist never takes the throne.
 
 ### Model-driven policy
 

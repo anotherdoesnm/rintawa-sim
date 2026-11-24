@@ -74,9 +74,10 @@ pub fn property_definitions(owner: &ExtensionId) -> Vec<PropertyDefinition> {
                 "properties": {
                     "name": { "type": "string", "minLength": 1, "maxLength": 64 },
                     "power": { "type": "integer", "minimum": 0 },
-                    "alive": { "type": "boolean" }
+                    "alive": { "type": "boolean" },
+                    "loyal": { "type": "boolean" }
                 },
-                "required": ["name", "power", "alive"],
+                "required": ["name", "power", "alive", "loyal"],
                 "additionalProperties": false
             }),
         ),
@@ -104,9 +105,10 @@ pub fn runtime_schemas(owner: &ExtensionId) -> Vec<RuntimeSchemaDefinition> {
                             "properties": {
                                 "id": { "type": "string" },
                                 "name": { "type": "string", "minLength": 1, "maxLength": 64 },
-                                "power": { "type": "integer", "minimum": 0 }
+                                "power": { "type": "integer", "minimum": 0 },
+                                "loyal": { "type": "boolean" }
                             },
-                            "required": ["id", "name", "power"],
+                            "required": ["id", "name", "power", "loyal"],
                             "additionalProperties": false
                         }
                     }

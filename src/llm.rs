@@ -283,6 +283,7 @@ mod tests {
             power: 4,
             alive: true,
             is_ruler: false,
+            loyal: false,
         };
         let rival_actor = ActorView {
             id: rival,
@@ -290,6 +291,7 @@ mod tests {
             power: 2,
             alive: true,
             is_ruler: false,
+            loyal: false,
         };
         (
             WorldView {
