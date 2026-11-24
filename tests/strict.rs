@@ -25,6 +25,24 @@ impl Policy for Usurper {
     }
 }
 
+/// Seizes the empty throne once, then hoards: it drives stability to zero while
+/// holding power, which is exactly the state the ruler penalty targets.
+struct SeizeThenHoard;
+
+impl Policy for SeizeThenHoard {
+    fn name(&self) -> &str {
+        "seize-then-hoard"
+    }
+
+    fn decide(&self, view: &WorldView, _me: &ActorView) -> PolicyDecision {
+        if view.ruler.is_none() {
+            PolicyDecision::Act(PlannedAction::new(ActionKind::GrabPower))
+        } else {
+            PolicyDecision::Act(PlannedAction::new(ActionKind::Hoard))
+        }
+    }
+}
+
 /// Always attempts the same action, optionally targeting the ruler.
 struct Always {
     action: ActionKind,
@@ -185,5 +203,52 @@ fn test_should_leave_the_throne_vacant_when_the_ruler_is_purged() -> anyhow::Res
 
     assert_eq!(report.ruler, None, "a purged ruler leaves no heir");
     assert_eq!(report.deaths, 1);
+    Ok(())
+}
+
+#[test]
+fn test_should_bleed_the_ruler_only_at_zero_stability() -> anyhow::Result<()> {
+    let scenario = Scenario {
+        rules: Rules::Strict,
+        stability: 2,
+        actors: vec![
+            actor("ruler", 5, Arc::new(SeizeThenHoard)),
+            actor(
+                "saver",
+                3,
+                Arc::new(Always {
+                    action: ActionKind::Hoard,
+                    target_ruler: false,
+                }),
+            ),
+        ],
+    };
+
+    let directory = tempfile::tempdir()?;
+    let mut driver = SimDriver::start(&directory.path().join("world.sqlite"), &scenario)?;
+    driver.run(5)?;
+    let report = driver.finish()?;
+
+    let ruler = report
+        .actors
+        .iter()
+        .find(|actor| actor.name == "ruler")
+        .expect("ruler must be in the report");
+    let saver = report
+        .actors
+        .iter()
+        .find(|actor| actor.name == "saver")
+        .expect("saver must be in the report");
+
+    assert!(
+        ruler.power < 5,
+        "an exhausted realm costs its ruler power, got {}",
+        ruler.power
+    );
+    assert!(
+        saver.power >= 3,
+        "challengers are not punished for waiting, got {}",
+        saver.power
+    );
     Ok(())
 }

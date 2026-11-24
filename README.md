@@ -71,7 +71,10 @@ stability are only signals. `rules: "strict"` makes them real:
 - a purge needs **at least as much** power as its target and spends two power;
 - purging the ruler leaves the throne **vacant**;
 - at zero stability only `share` is accepted: the realm tolerates no coup, purge or
-  hoard, but sharing is the action that restores it.
+  hoard, but sharing is the action that restores it;
+- each round at zero stability costs **the ruler** one power, because the country
+  falls apart under their rule. Challengers are not punished: the ruler's way out is
+  to share, and waiting stays viable.
 
 A refused command is a result, not a crash: the driver records it as a `refused`
 decision with the world's reason, and the run continues. `examples/strict.json`

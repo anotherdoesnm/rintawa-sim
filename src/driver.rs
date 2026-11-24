@@ -18,8 +18,10 @@ use crate::{
         ActorReport, ActorView, Policy, PolicyDecision, RoundReport, Rules, SimulationReport,
         WorldView,
     },
-    schemas::{act_key, actor_key, property_definitions, runtime_schemas, seed_key, state_key},
-    system::{ActPayload, ActSystem, ActionWire, SeedActor, SeedPayload, SeedSystem},
+    schemas::{
+        act_key, actor_key, property_definitions, runtime_schemas, seed_key, state_key, tick_key,
+    },
+    system::{ActPayload, ActSystem, ActionWire, SeedActor, SeedPayload, SeedSystem, TickSystem},
 };
 
 /// One actor declared by a scenario.
@@ -115,6 +117,7 @@ impl SimDriver {
         }
         builder.register_system(SeedSystem::new())?;
         builder.register_system(ActSystem::new())?;
+        builder.register_system(TickSystem::new())?;
         let runtime = builder.start()?;
         let definitions: Vec<_> = property_definitions(&package_owner())
             .into_iter()
@@ -276,6 +279,10 @@ impl SimDriver {
                     crate::model::ActionKind::Hoard => events.push(format!("{name} hoarded power")),
                 }
             }
+            let tick = serde_json::json!({ "state": self.state.to_string() });
+            self.runtime
+                .submit(WorldCommand::system(tick_key(), tick))?
+                .wait()?;
             let view = self.view()?;
             if view.ruler.is_some() && view.ruler != ruler_before {
                 self.ruler_changes += 1;

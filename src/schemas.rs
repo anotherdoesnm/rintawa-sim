@@ -18,6 +18,8 @@ pub const ACTOR_PROPERTY: &str = "sim.actor";
 pub const SEED_COMMAND: &str = "sim.seed";
 /// Command that resolves one actor action.
 pub const ACT_COMMAND: &str = "sim.act";
+/// Command submitted once per round: an exhausted realm costs its ruler power.
+pub const TICK_COMMAND: &str = "sim.tick";
 
 /// Parses one canonical `<name>@<version>` key.
 ///
@@ -48,6 +50,11 @@ pub fn seed_key() -> SchemaKey {
 /// Key of the act command schema.
 pub fn act_key() -> SchemaKey {
     key(ACT_COMMAND, 1)
+}
+
+/// Key of the round-tick command schema.
+pub fn tick_key() -> SchemaKey {
+    key(TICK_COMMAND, 1)
 }
 
 /// Property definitions persisted into the world vocabulary on first activation.
@@ -116,6 +123,17 @@ pub fn runtime_schemas(owner: &ExtensionId) -> Vec<RuntimeSchemaDefinition> {
                     }
                 },
                 "required": ["state", "stability", "actors"],
+                "additionalProperties": false
+            }),
+        ),
+        RuntimeSchemaDefinition::new(
+            tick_key(),
+            SchemaKind::Command,
+            owner.clone(),
+            json!({
+                "type": "object",
+                "properties": { "state": { "type": "string" } },
+                "required": ["state"],
                 "additionalProperties": false
             }),
         ),

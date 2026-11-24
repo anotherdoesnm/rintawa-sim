@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::model::Rules;
-use crate::schemas::{act_key, actor_key, seed_key, state_key};
+use crate::schemas::{act_key, actor_key, seed_key, state_key, tick_key};
 
 /// Payload of the seed command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +155,81 @@ impl WorldSystem for SeedSystem {
                     "alive": true,
                     "loyal": actor.loyal
                 }),
+            });
+        }
+        Ok(transaction)
+    }
+}
+
+/// System that resolves one round tick.
+///
+/// A realm at zero stability punishes its ruler, not its people: the ruler loses
+/// one power per round because the country falls apart under their rule, while
+/// challengers keep whatever they saved. The ruler's way out is to share power and
+/// restore stability.
+pub struct TickSystem {
+    schema: SchemaKey,
+}
+
+impl TickSystem {
+    /// Creates the tick System for the package tick schema.
+    pub fn new() -> Self {
+        Self { schema: tick_key() }
+    }
+}
+
+impl Default for TickSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WorldSystem for TickSystem {
+    fn command_schema(&self) -> &SchemaKey {
+        &self.schema
+    }
+
+    fn evaluate(
+        &self,
+        snapshot: &WorldSnapshot,
+        command: &rintawa_world::WorldCommand,
+    ) -> SystemResult<WorldTransaction> {
+        #[derive(Deserialize)]
+        struct TickPayload {
+            state: String,
+        }
+        let payload: TickPayload = serde_json::from_value(command.payload().clone())
+            .map_err(|error| SystemError::Rejected(format!("invalid tick payload: {error}")))?;
+        let state = parse_item(&payload.state, "state")?;
+        let raw = read_property(snapshot, state, &state_key())?
+            .ok_or_else(|| SystemError::Rejected(String::from("world state is missing")))?;
+        let state_data: StateData = serde_json::from_value(raw)
+            .map_err(|error| SystemError::Failed(format!("corrupt state payload: {error}")))?;
+
+        let mut transaction = WorldTransaction::new();
+        if matches!(state_data.rules, Rules::Strict)
+            && state_data.stability == 0
+            && let Some(ruler) = state_data.ruler.as_deref()
+            && let Ok(ruler_id) = ruler.parse::<ItemId>()
+            && let Some(ruler_raw) = read_property(snapshot, ruler_id, &actor_key())?
+            && let Ok(mut ruler_data) = serde_json::from_value::<ActorData>(ruler_raw)
+            && ruler_data.alive
+        {
+            ruler_data.power = (ruler_data.power - 1).max(0);
+            transaction.push_change(StateChange::SetProperty {
+                item: ruler_id,
+                key: actor_key(),
+                data: serde_json::to_value(&ruler_data)
+                    .map_err(|error| SystemError::Failed(error.to_string()))?,
+            });
+        }
+        if transaction.is_empty() {
+            // Keep the tick observable even when nothing happens.
+            transaction.push_change(StateChange::SetProperty {
+                item: state,
+                key: state_key(),
+                data: serde_json::to_value(&state_data)
+                    .map_err(|error| SystemError::Failed(error.to_string()))?,
             });
         }
         Ok(transaction)
