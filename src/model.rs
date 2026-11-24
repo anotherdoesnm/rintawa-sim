@@ -182,6 +182,31 @@ pub struct RoundReport {
     pub ruler: Option<String>,
     /// Names of the actors still alive.
     pub alive: Vec<String>,
+    /// What happened during the round, in submission order.
+    pub events: Vec<String>,
+}
+
+/// Per-actor outcome of one run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActorReport {
+    /// Display name.
+    pub name: String,
+    /// Policy that drove the actor.
+    pub policy: String,
+    /// Whether the actor survived.
+    pub alive: bool,
+    /// Final personal power.
+    pub power: i64,
+    /// Commands the actor submitted.
+    pub acts: u32,
+    /// Times the actor took the throne.
+    pub grabs: u32,
+    /// Purges the actor carried out.
+    pub purges: u32,
+    /// Actors this actor removed.
+    pub kills: Vec<String>,
+    /// Actor that removed this actor, when it did not survive.
+    pub killed_by: Option<String>,
 }
 
 /// Complete result of one scripted run.
@@ -197,6 +222,10 @@ pub struct SimulationReport {
     pub alive: usize,
     /// Number of actors removed during the run.
     pub deaths: u32,
+    /// Times the throne changed hands.
+    pub ruler_changes: u32,
     /// Per-round history.
     pub history: Vec<RoundReport>,
+    /// Per-actor outcome, sorted by name.
+    pub actors: Vec<ActorReport>,
 }

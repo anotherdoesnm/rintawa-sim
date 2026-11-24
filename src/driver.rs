@@ -12,7 +12,9 @@ use rintawa_world::WorldCommand;
 use rintawa_world_runtime::{WorldRuntime, WorldRuntimeBuilder, WorldSnapshot};
 
 use crate::{
-    model::{ActorView, Policy, PolicyDecision, RoundReport, SimulationReport, WorldView},
+    model::{
+        ActorReport, ActorView, Policy, PolicyDecision, RoundReport, SimulationReport, WorldView,
+    },
     schemas::{act_key, actor_key, property_definitions, runtime_schemas, seed_key, state_key},
     system::{ActPayload, ActSystem, ActionWire, SeedActor, SeedPayload, SeedSystem},
 };
@@ -60,12 +62,24 @@ pub struct SimDriver {
     actors: Vec<ActorRef>,
     rounds: u32,
     history: Vec<RoundReport>,
+    stats: Vec<ActorStats>,
+    ruler_changes: u32,
 }
 
 struct ActorRef {
     id: ItemId,
     name: String,
     policy: Arc<dyn Policy>,
+}
+
+/// Running per-actor counters collected while commands are submitted.
+#[derive(Default)]
+struct ActorStats {
+    acts: u32,
+    grabs: u32,
+    purges: u32,
+    kills: Vec<String>,
+    killed_by: Option<String>,
 }
 
 impl SimDriver {
@@ -123,12 +137,15 @@ impl SimDriver {
             .submit(WorldCommand::system(seed_key(), payload))?
             .wait()?;
 
+        let stats = actors.iter().map(|_| ActorStats::default()).collect();
         Ok(Self {
             runtime,
             state,
             actors,
             rounds: 0,
             history: Vec::new(),
+            stats,
+            ruler_changes: 0,
         })
     }
 
@@ -140,6 +157,8 @@ impl SimDriver {
     pub fn run(&mut self, rounds: u32) -> Result<()> {
         for _ in 0..rounds {
             self.rounds += 1;
+            let ruler_before = self.view()?.ruler;
+            let mut events = Vec::new();
             let order: Vec<ItemId> = {
                 let view = self.view()?;
                 view.actors
@@ -182,11 +201,36 @@ impl SimDriver {
                 self.runtime
                     .submit(WorldCommand::system(act_key(), payload))?
                     .wait()?;
+                let index = self.actor_index(actor_id);
+                let name = self.actors[index].name.clone();
+                self.stats[index].acts += 1;
+                match planned.kind {
+                    crate::model::ActionKind::GrabPower => {
+                        self.stats[index].grabs += 1;
+                        events.push(format!("{name} took the throne"));
+                    }
+                    crate::model::ActionKind::Purge => {
+                        self.stats[index].purges += 1;
+                        if let Some(target) = planned.target {
+                            let target_index = self.actor_index(target);
+                            let target_name = self.actors[target_index].name.clone();
+                            self.stats[index].kills.push(target_name.clone());
+                            self.stats[target_index].killed_by = Some(name.clone());
+                            events.push(format!("{name} purged {target_name}"));
+                        }
+                    }
+                    crate::model::ActionKind::Share => events.push(format!("{name} shared power")),
+                    crate::model::ActionKind::Hoard => events.push(format!("{name} hoarded power")),
+                }
             }
             let view = self.view()?;
+            if view.ruler.is_some() && view.ruler != ruler_before {
+                self.ruler_changes += 1;
+            }
             self.history.push(RoundReport {
                 round: self.rounds,
                 stability: view.stability,
+                events,
                 ruler: view
                     .ruler
                     .and_then(|ruler| view.actors.iter().find(|actor| actor.id == ruler))
@@ -209,6 +253,26 @@ impl SimDriver {
     /// Returns a runtime error when the final world state cannot be read.
     pub fn finish(self) -> Result<SimulationReport> {
         let view = self.view()?;
+        let mut actors: Vec<ActorReport> = view
+            .actors
+            .iter()
+            .map(|actor| {
+                let index = self.actor_index(actor.id);
+                let stats = &self.stats[index];
+                ActorReport {
+                    name: actor.name.clone(),
+                    policy: self.actors[index].policy.name().to_string(),
+                    alive: actor.alive,
+                    power: actor.power,
+                    acts: stats.acts,
+                    grabs: stats.grabs,
+                    purges: stats.purges,
+                    kills: stats.kills.clone(),
+                    killed_by: stats.killed_by.clone(),
+                }
+            })
+            .collect();
+        actors.sort_by(|left, right| left.name.cmp(&right.name));
         let ruler = view
             .ruler
             .and_then(|ruler| view.actors.iter().find(|actor| actor.id == ruler))
@@ -220,8 +284,17 @@ impl SimDriver {
             alive: view.alive(),
             deaths: u32::try_from(view.actors.len().saturating_sub(view.alive()))
                 .unwrap_or_default(),
+            ruler_changes: self.ruler_changes,
             history: self.history,
+            actors,
         })
+    }
+
+    fn actor_index(&self, id: ItemId) -> usize {
+        self.actors
+            .iter()
+            .position(|actor| actor.id == id)
+            .unwrap_or_default()
     }
 
     /// Reads one consistent view of the simulated world.

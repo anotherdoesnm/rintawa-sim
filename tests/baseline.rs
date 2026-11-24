@@ -137,3 +137,41 @@ fn test_abstaining_policy_leaves_the_world_untouched() -> anyhow::Result<()> {
     assert_eq!(report.deaths, 0);
     Ok(())
 }
+
+#[test]
+fn test_report_attributes_actions_to_actors() -> anyhow::Result<()> {
+    let report = run(&scenario(), 6)?;
+
+    assert_eq!(report.actors.len(), 3);
+    assert!(report.ruler_changes >= 1, "the throne changes hands");
+    assert!(
+        report.actors.iter().any(|actor| actor.acts > 0),
+        "actors act during the run"
+    );
+
+    let dead: Vec<_> = report.actors.iter().filter(|actor| !actor.alive).collect();
+    assert_eq!(dead.len() as u32, report.deaths);
+    for actor in dead {
+        let killer = actor
+            .killed_by
+            .as_ref()
+            .expect("a removed actor records who removed it");
+        let killer = report
+            .actors
+            .iter()
+            .find(|candidate| &candidate.name == killer)
+            .expect("the killer is part of the report");
+        assert!(
+            killer.kills.contains(&actor.name),
+            "the killer records its victim"
+        );
+    }
+
+    for round in &report.history {
+        assert!(
+            !round.events.is_empty(),
+            "every scripted round records what happened"
+        );
+    }
+    Ok(())
+}

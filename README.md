@@ -27,18 +27,48 @@ versioned properties.
 cargo run --release -- --rounds 8 --db /tmp/world.sqlite
 ```
 
-Output is a JSON report: stability per round, current ruler, survivors and deaths.
+Output is a JSON report: world outcome, per-round history with the events that
+caused it, and per-actor metrics.
 
-```
+```json
 {
-  "rounds": 6,
+  "rounds": 3,
   "final_stability": 4,
   "ruler": "doe",
   "alive": 2,
   "deaths": 1,
-  "history": [...]
+  "ruler_changes": 2,
+  "history": [
+    {
+      "round": 1,
+      "stability": 6,
+      "ruler": "kitten",
+      "alive": ["kitten", "doe", "mart"],
+      "events": ["kitten took the throne", "doe hoarded power", "mart shared power"]
+    }
+  ],
+  "actors": [
+    {
+      "name": "kitten", "policy": "aggressive", "alive": true, "power": 4,
+      "acts": 3, "grabs": 1, "purges": 1, "kills": ["mart"], "killed_by": null
+    }
+  ]
 }
 ```
+
+## Metrics
+
+The report separates three things that are easy to conflate:
+
+- **world outcome** — stability, current ruler, survivors, how often the throne
+  changed hands;
+- **round history** — what actually happened, in submission order, so a run can be
+  read without replaying it (the world model has no replay);
+- **per-actor metrics** — commands submitted, coups, purges, who removed whom and
+  who removed the actor.
+
+That last part is the point of a baseline: an LLM policy should be compared on
+the same counters, not on how convincing its prose looked.
 
 ## Policies
 
