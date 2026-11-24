@@ -139,6 +139,12 @@ export RINTAWA_SIM_LLM_BUDGET_TOKENS=20000
 cargo run --release -- --rounds 8 --llm
 ```
 
+`RINTAWA_SIM_LLM_TRACE=1` prints each decision to stderr while the report keeps
+only the effects. Reasoning models spend completion tokens on thinking first, so
+the request asks for 512 completion tokens; with a smaller budget such a model can
+return an empty `content`, which the policy treats as `Abstain` (a real run against
+`glm-5.3-flash` did exactly that in one round).
+
 The policy is deliberately defensive, because an actor in a world must not stall
 the world: a transport error, a non-JSON answer, an unknown target, a purge
 without a live target or an exhausted token budget all end in `Abstain`, which the

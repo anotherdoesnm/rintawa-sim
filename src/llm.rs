@@ -24,6 +24,8 @@ pub const BUDGET_ENV: &str = "RINTAWA_SIM_LLM_BUDGET_TOKENS";
 
 const DEFAULT_BUDGET_TOKENS: u64 = 20_000;
 const DEFAULT_TIMEOUT_SECONDS: u64 = 20;
+/// Completion budget per decision. Reasoning models spend part of it on thinking.
+const MAX_COMPLETION_TOKENS: u32 = 512;
 const MAX_RESPONSE_BYTES: u64 = 64 * 1024;
 
 /// Policy that asks a chat-completions endpoint what its actor does next.
@@ -110,7 +112,7 @@ impl LlmPolicy {
         serde_json::json!({
             "model": self.model,
             "temperature": 0,
-            "max_tokens": 128,
+            "max_tokens": MAX_COMPLETION_TOKENS,
             "messages": [
                 {
                     "role": "system",
@@ -141,6 +143,16 @@ impl LlmPolicy {
             }
         }
     }
+}
+
+fn content_of(value: &serde_json::Value) -> &str {
+    value
+        .get("choices")
+        .and_then(|choices| choices.get(0))
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
 }
 
 /// One parsed model answer.
@@ -225,6 +237,14 @@ impl Policy for LlmPolicy {
         let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
             return PolicyDecision::Abstain;
         };
+        if std::env::var_os("RINTAWA_SIM_LLM_TRACE").is_some() {
+            eprintln!(
+                "llm decision for {} in round {}: {}",
+                me.name,
+                view.round,
+                content_of(&value)
+            );
+        }
         let content = value
             .get("choices")
             .and_then(|choices| choices.get(0))
