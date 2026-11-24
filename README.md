@@ -160,7 +160,8 @@ variable that holds it), and the report labels the policy with the model, so
 ```
 
 `examples/mixed.json` is a ready-made run with three different models plus one
-scripted actor. `examples/openrouter.json` does the same with free OpenRouter
+scripted actor, and `examples/mixed-free.json` mixes z.ai and free OpenRouter models
+in the same world (six actors, six rounds). `examples/openrouter.json` does the same with free OpenRouter
 models:
 
 ```sh
