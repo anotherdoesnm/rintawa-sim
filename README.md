@@ -27,6 +27,11 @@ versioned properties.
 cargo run --release -- --rounds 8 --db /tmp/world.sqlite
 ```
 
+`--format markdown` renders the same report as GitHub-Flavored Markdown tables,
+ready to paste into a chat client such as Fluxer; `--format json` (the default)
+keeps the machine-readable form. Cell contents are escaped, so a pipe in an actor
+name cannot break the table.
+
 Output is a JSON report: world outcome, per-round history with the events that
 caused it, and per-actor metrics.
 

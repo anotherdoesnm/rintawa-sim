@@ -11,6 +11,7 @@
 pub mod driver;
 pub mod llm;
 pub mod model;
+pub mod report;
 pub mod schemas;
 pub mod system;
 pub mod template;
@@ -21,4 +22,5 @@ pub use model::{
     ActionKind, ActorView, Aggressive, Cautious, Loyalist, Opportunist, PlannedAction, Policy,
     PolicyDecision, RoundReport, SimulationReport, WorldView,
 };
+pub use report::render_markdown;
 pub use template::{MAX_TEMPLATE_ACTORS, ScenarioTemplate, TEMPLATE_SCHEMA, TemplateActor};

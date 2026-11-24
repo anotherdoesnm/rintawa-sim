@@ -20,6 +20,7 @@ fn main() -> ExitCode {
 fn run() -> anyhow::Result<()> {
     let mut rounds = 8_u32;
     let mut use_llm = false;
+    let mut format = String::from("json");
     let mut template_in: Option<PathBuf> = None;
     let mut template_out: Option<PathBuf> = None;
     let mut database =
@@ -40,6 +41,11 @@ fn run() -> anyhow::Result<()> {
                 );
             }
             "--llm" => use_llm = true,
+            "--format" => {
+                format = args
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("--format needs a value"))?;
+            }
             "--template" => {
                 template_in =
                     Some(PathBuf::from(args.next().ok_or_else(|| {
@@ -54,7 +60,7 @@ fn run() -> anyhow::Result<()> {
             }
             "--help" | "-h" => {
                 println!(
-                    "usage: rintawa-sim [--rounds N] [--db PATH] [--llm] [--template PATH] [--save-template PATH]"
+                    "usage: rintawa-sim [--rounds N] [--db PATH] [--llm] [--template PATH] [--save-template PATH] [--format json|markdown]"
                 );
                 return Ok(());
             }
@@ -79,7 +85,11 @@ fn run() -> anyhow::Result<()> {
     let mut driver = SimDriver::start(&database, &scenario)?;
     driver.run(rounds)?;
     let report = driver.finish()?;
-    println!("{}", serde_json::to_string_pretty(&report)?);
+    match format.as_str() {
+        "json" => println!("{}", serde_json::to_string_pretty(&report)?),
+        "markdown" | "md" => println!("{}", rintawa_sim::render_markdown(&report)),
+        other => anyhow::bail!("unknown format {other}; use json or markdown"),
+    }
     Ok(())
 }
 
