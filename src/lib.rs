@@ -20,7 +20,7 @@ pub use driver::{Scenario, ScenarioActor, SimDriver, package_owner};
 pub use llm::{LlmConfig, LlmPolicy};
 pub use model::{
     ActionKind, ActorView, Aggressive, Cautious, Loyalist, Opportunist, PlannedAction, Policy,
-    PolicyDecision, RoundReport, SimulationReport, WorldView,
+    PolicyDecision, RoundReport, Rules, SimulationReport, WorldView,
 };
 pub use report::render_markdown;
 pub use template::{MAX_TEMPLATE_ACTORS, ScenarioTemplate, TEMPLATE_SCHEMA, TemplateActor};

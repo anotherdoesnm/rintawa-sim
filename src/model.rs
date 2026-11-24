@@ -55,6 +55,30 @@ impl PlannedAction {
     }
 }
 
+/// Rule set enforced by the world, not by the policies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum Rules {
+    /// Historical behaviour: any living actor may seize the throne or purge anyone.
+    #[default]
+    Loose,
+    /// Power and stability constrain what the world accepts: a coup needs strictly
+    /// more power than the ruler, a purge needs at least as much power as its target
+    /// and spends two, purging the ruler leaves the throne vacant, and no political
+    /// action is accepted while stability is zero.
+    Strict,
+}
+
+impl Rules {
+    /// Stable name used in templates and reports.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Loose => "loose",
+            Self::Strict => "strict",
+        }
+    }
+}
+
 /// Outcome of one policy decision.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PolicyDecision {
@@ -186,6 +210,8 @@ pub struct ActorView {
 pub struct WorldView {
     /// Number of completed rounds.
     pub round: u32,
+    /// Rule set the world enforces.
+    pub rules: Rules,
     /// World stability, lowered by purges and hoarding.
     pub stability: i64,
     /// Current ruler, when the throne has been taken.
@@ -266,6 +292,8 @@ pub struct DecisionReport {
 /// Complete result of one scripted run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SimulationReport {
+    /// Rule set the world enforced.
+    pub rules: String,
     /// Number of rounds played.
     pub rounds: u32,
     /// Stability of the final world state.

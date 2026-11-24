@@ -6,6 +6,7 @@ use rintawa_world_runtime::{SystemError, SystemResult, WorldSnapshot, WorldSyste
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::model::Rules;
 use crate::schemas::{act_key, actor_key, seed_key, state_key};
 
 /// Payload of the seed command.
@@ -17,6 +18,9 @@ pub struct SeedPayload {
     pub stability: i64,
     /// Actors created at the start of the run.
     pub actors: Vec<SeedActor>,
+    /// Rule set the world will enforce.
+    #[serde(default)]
+    pub rules: Rules,
 }
 
 /// One actor declared by the seed command.
@@ -65,6 +69,8 @@ pub enum ActionWire {
 struct StateData {
     stability: i64,
     ruler: Option<String>,
+    #[serde(default)]
+    rules: Rules,
 }
 
 /// Actor property payload.
@@ -130,7 +136,11 @@ impl WorldSystem for SeedSystem {
         transaction.push_change(StateChange::SetProperty {
             item: state,
             key: state_key(),
-            data: json!({ "stability": payload.stability, "ruler": Value::Null }),
+            data: json!({
+                "stability": payload.stability,
+                "ruler": Value::Null,
+                "rules": payload.rules
+            }),
         });
 
         for actor in &payload.actors {
@@ -199,9 +209,28 @@ impl WorldSystem for ActSystem {
             )));
         }
 
+        if matches!(state_data.rules, Rules::Strict) && state_data.stability == 0 {
+            return Err(SystemError::Rejected(String::from(
+                "stability is zero: no political action is accepted",
+            )));
+        }
+
         let mut transaction = WorldTransaction::new();
         match payload.action {
             ActionWire::GrabPower => {
+                if matches!(state_data.rules, Rules::Strict)
+                    && let Some(ruler) = state_data.ruler.as_deref()
+                    && let Ok(ruler_id) = ruler.parse::<ItemId>()
+                    && let Some(ruler_raw) = read_property(snapshot, ruler_id, &actor_key())?
+                    && let Ok(ruler_data) = serde_json::from_value::<ActorData>(ruler_raw)
+                    && ruler_data.alive
+                    && actor_data.power <= ruler_data.power
+                {
+                    return Err(SystemError::Rejected(format!(
+                        "a coup needs strictly more power than the ruler: {} vs {}",
+                        actor_data.power, ruler_data.power
+                    )));
+                }
                 state_data.ruler = Some(actor.to_string());
                 transaction.push_change(StateChange::CreateRelation {
                     id: ItemId::new(),
@@ -230,6 +259,18 @@ impl WorldSystem for ActSystem {
                     return Err(SystemError::Rejected(String::from(
                         "target is already dead",
                     )));
+                }
+                if matches!(state_data.rules, Rules::Strict) {
+                    if actor_data.power < target_data.power {
+                        return Err(SystemError::Rejected(format!(
+                            "a purge needs at least as much power as its target: {} vs {}",
+                            actor_data.power, target_data.power
+                        )));
+                    }
+                    actor_data.power = (actor_data.power - 2).max(0);
+                    if state_data.ruler.as_deref() == Some(target.to_string().as_str()) {
+                        state_data.ruler = None;
+                    }
                 }
                 target_data.alive = false;
                 target_data.power = 0;

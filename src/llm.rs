@@ -193,7 +193,16 @@ impl LlmPolicy {
                 })
             })
             .collect();
+        let rules = match view.rules {
+            crate::model::Rules::Strict => {
+                "strict: a coup needs strictly more power than the ruler, a purge needs at least as much power as its target and costs 2 power, purging the ruler leaves the throne vacant, and no political action is accepted while stability is 0"
+            }
+            crate::model::Rules::Loose => {
+                "loose: any living actor may seize the throne or purge anyone, power and stability are only signals"
+            }
+        };
         let situation = serde_json::json!({
+            "rules": rules,
             "round": view.round,
             "stability": view.stability,
             "ruler": view.ruler.map(|ruler| ruler.to_string()),
@@ -474,6 +483,7 @@ mod tests {
         };
         (
             WorldView {
+                rules: crate::model::Rules::Strict,
                 round: 1,
                 stability: 6,
                 ruler: None,

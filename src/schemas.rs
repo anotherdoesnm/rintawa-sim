@@ -60,7 +60,8 @@ pub fn property_definitions(owner: &ExtensionId) -> Vec<PropertyDefinition> {
                 "type": "object",
                 "properties": {
                     "stability": { "type": "integer", "minimum": 0, "maximum": 10 },
-                    "ruler": { "type": ["string", "null"] }
+                    "ruler": { "type": ["string", "null"] },
+                    "rules": { "enum": ["loose", "strict"] }
                 },
                 "required": ["stability", "ruler"],
                 "additionalProperties": false
@@ -96,6 +97,7 @@ pub fn runtime_schemas(owner: &ExtensionId) -> Vec<RuntimeSchemaDefinition> {
                 "properties": {
                     "state": { "type": "string" },
                     "stability": { "type": "integer", "minimum": 0, "maximum": 10 },
+                    "rules": { "enum": ["loose", "strict"] },
                     "actors": {
                         "type": "array",
                         "minItems": 1,

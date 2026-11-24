@@ -61,6 +61,21 @@ caused it, and per-actor metrics.
 }
 ```
 
+## Rules
+
+The world, not the policies, enforces the rules. `rules: "loose"` is the original
+behaviour: any living actor may seize the throne or purge anyone, and power and
+stability are only signals. `rules: "strict"` makes them real:
+
+- a coup needs **strictly more** power than the current ruler;
+- a purge needs **at least as much** power as its target and spends two power;
+- purging the ruler leaves the throne **vacant**;
+- no political action is accepted while stability is **zero**.
+
+A refused command is a result, not a crash: the driver records it as a `refused`
+decision with the world's reason, and the run continues. `examples/strict.json`
+plays the strict rules with three glm models and a loyalist bot.
+
 ## Templates
 
 A run starts from a scenario, and a scenario is a portable JSON template:

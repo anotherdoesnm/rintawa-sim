@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rintawa_sim::{
     ActionKind, ActorView, Aggressive, Cautious, Loyalist, Opportunist, PlannedAction, Policy,
-    PolicyDecision, Scenario, ScenarioActor, SimDriver, WorldView,
+    PolicyDecision, Rules, Scenario, ScenarioActor, SimDriver, WorldView,
 };
 
 /// Agent that always spends power on stability.
@@ -35,6 +35,7 @@ impl Policy for Idle {
 
 fn scenario() -> Scenario {
     Scenario {
+        rules: Rules::Loose,
         stability: 6,
         actors: vec![
             ScenarioActor {
@@ -100,6 +101,7 @@ fn test_run_is_deterministic_for_the_same_scenario() -> anyhow::Result<()> {
 #[test]
 fn test_custom_policy_needs_no_world_changes() -> anyhow::Result<()> {
     let pacifist = Scenario {
+        rules: Rules::Loose,
         stability: 6,
         actors: (0..3)
             .map(|index| ScenarioActor {
@@ -126,6 +128,7 @@ fn test_custom_policy_needs_no_world_changes() -> anyhow::Result<()> {
 #[test]
 fn test_abstaining_policy_leaves_the_world_untouched() -> anyhow::Result<()> {
     let idle = Scenario {
+        rules: Rules::Loose,
         stability: 6,
         actors: vec![ScenarioActor {
             name: String::from("idle"),
@@ -186,6 +189,7 @@ fn test_report_attributes_actions_to_actors() -> anyhow::Result<()> {
 #[test]
 fn test_loyalists_execute_the_rulers_order_without_competing() -> anyhow::Result<()> {
     let court = Scenario {
+        rules: Rules::Loose,
         stability: 5,
         actors: vec![
             ScenarioActor {
@@ -253,6 +257,7 @@ fn test_loyalists_execute_the_rulers_order_without_competing() -> anyhow::Result
 #[test]
 fn test_loyalists_without_a_ruler_do_nothing() -> anyhow::Result<()> {
     let court = Scenario {
+        rules: Rules::Loose,
         stability: 5,
         actors: vec![
             ScenarioActor {

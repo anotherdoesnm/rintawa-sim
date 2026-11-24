@@ -98,6 +98,7 @@ mod tests {
 
     fn report() -> SimulationReport {
         SimulationReport {
+            rules: String::from("loose"),
             rounds: 1,
             final_stability: 4,
             ruler: Some(String::from("big")),

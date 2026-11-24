@@ -44,6 +44,9 @@ pub struct ScenarioTemplate {
     pub schema: u32,
     /// Human-facing scenario name.
     pub name: String,
+    /// Rule set the world enforces.
+    #[serde(default)]
+    pub rules: crate::model::Rules,
     /// Initial stability.
     pub stability: i64,
     /// Actors present at the start of the run.
@@ -56,6 +59,7 @@ impl ScenarioTemplate {
         Self {
             schema: TEMPLATE_SCHEMA,
             name: name.into(),
+            rules: scenario.rules,
             stability: scenario.stability,
             actors: scenario
                 .actors
@@ -116,6 +120,7 @@ impl ScenarioTemplate {
             });
         }
         Ok(Scenario {
+            rules: self.rules,
             stability: self.stability,
             actors,
         })
@@ -167,6 +172,7 @@ mod tests {
 
     fn scenario() -> Scenario {
         Scenario {
+            rules: crate::model::Rules::Loose,
             stability: 6,
             actors: vec![
                 ScenarioActor {
@@ -204,6 +210,7 @@ mod tests {
     #[test]
     fn test_should_keep_per_actor_models_and_never_a_key() -> anyhow::Result<()> {
         let scenario = Scenario {
+            rules: crate::model::Rules::Loose,
             stability: 6,
             actors: vec![ScenarioActor {
                 name: String::from("kitten"),

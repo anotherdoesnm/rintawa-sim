@@ -110,6 +110,7 @@ fn default_scenario(use_llm: bool) -> anyhow::Result<Scenario> {
         Arc::new(Aggressive)
     };
     Ok(Scenario {
+        rules: rintawa_sim::Rules::Loose,
         stability: 6,
         actors: vec![
             ScenarioActor {

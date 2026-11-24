@@ -9,11 +9,14 @@ use rintawa_sdk::{
 };
 use rintawa_storage::SqliteWorldStorage;
 use rintawa_world::WorldCommand;
-use rintawa_world_runtime::{WorldRuntime, WorldRuntimeBuilder, WorldSnapshot};
+use rintawa_world_runtime::{
+    SystemError, WorldRuntime, WorldRuntimeBuilder, WorldRuntimeError, WorldSnapshot,
+};
 
 use crate::{
     model::{
-        ActorReport, ActorView, Policy, PolicyDecision, RoundReport, SimulationReport, WorldView,
+        ActorReport, ActorView, Policy, PolicyDecision, RoundReport, Rules, SimulationReport,
+        WorldView,
     },
     schemas::{act_key, actor_key, property_definitions, runtime_schemas, seed_key, state_key},
     system::{ActPayload, ActSystem, ActionWire, SeedActor, SeedPayload, SeedSystem},
@@ -51,6 +54,8 @@ impl std::fmt::Debug for ScenarioActor {
 /// Starting conditions of one run.
 #[derive(Debug, Clone)]
 pub struct Scenario {
+    /// Rule set the world enforces.
+    pub rules: Rules,
     /// Initial stability.
     pub stability: i64,
     /// Actors present at the start.
@@ -69,6 +74,7 @@ pub struct SimDriver {
     actors: Vec<ActorRef>,
     rounds: u32,
     history: Vec<RoundReport>,
+    rules: Rules,
     stats: Vec<ActorStats>,
     ruler_changes: u32,
 }
@@ -130,6 +136,7 @@ impl SimDriver {
         let payload = serde_json::to_value(SeedPayload {
             state: state.to_string(),
             stability: scenario.stability,
+            rules: scenario.rules,
             actors: scenario
                 .actors
                 .iter()
@@ -153,6 +160,7 @@ impl SimDriver {
             actors,
             rounds: 0,
             history: Vec::new(),
+            rules: scenario.rules,
             stats,
             ruler_changes: 0,
         })
@@ -207,10 +215,30 @@ impl SimDriver {
                     },
                     target: planned.target.map(|target| target.to_string()),
                 })?;
-                self.runtime
+                let outcome = self
+                    .runtime
                     .submit(WorldCommand::system(act_key(), payload))?
-                    .wait()?;
+                    .wait();
                 let index = self.actor_index(actor_id);
+                if let Err(error) = outcome {
+                    if let Some(reason) = rejection(&error) {
+                        let name = self.actors[index].name.clone();
+                        let refused_target = planned
+                            .target
+                            .map(|t| self.actors[self.actor_index(t)].name.clone());
+                        events.push(format!("{name} refused: {reason}"));
+                        self.stats[index]
+                            .decisions
+                            .push(crate::model::DecisionReport {
+                                round: self.rounds,
+                                action: String::from("refused"),
+                                target: refused_target,
+                                note: Some(reason),
+                            });
+                        continue;
+                    }
+                    return Err(error.into());
+                }
                 let name = self.actors[index].name.clone();
                 self.stats[index].acts += 1;
                 let decision_target = planned
@@ -310,6 +338,7 @@ impl SimDriver {
             alive: view.alive(),
             deaths: u32::try_from(view.actors.len().saturating_sub(view.alive()))
                 .unwrap_or_default(),
+            rules: self.rules.name().to_string(),
             ruler_changes: self.ruler_changes,
             history: self.history,
             actors,
@@ -335,6 +364,17 @@ impl SimDriver {
             .get("stability")
             .and_then(serde_json::Value::as_i64)
             .context("world state has no stability")?;
+        let rules = state_raw
+            .get("rules")
+            .and_then(serde_json::Value::as_str)
+            .map(|name| {
+                if name == "strict" {
+                    Rules::Strict
+                } else {
+                    Rules::Loose
+                }
+            })
+            .unwrap_or(self.rules);
         let ruler = state_raw
             .get("ruler")
             .and_then(serde_json::Value::as_str)
@@ -369,9 +409,21 @@ impl SimDriver {
 
         Ok(WorldView {
             round: self.rounds,
+            rules,
             stability,
             ruler,
             actors,
         })
+    }
+}
+
+/// Returns the world's rejection reason when the command was refused by rules.
+fn rejection(error: &WorldRuntimeError) -> Option<String> {
+    match error {
+        WorldRuntimeError::SystemFailed { source, .. } => match source {
+            SystemError::Rejected(reason) => Some(reason.clone()),
+            _ => None,
+        },
+        _ => None,
     }
 }
