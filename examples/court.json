@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "name": "court",
+  "stability": 6,
+  "actors": [
+    {
+      "name": "ruler",
+      "power": 5,
+      "loyal": false,
+      "policy": "aggressive"
+    },
+    {
+      "name": "bot-a",
+      "power": 3,
+      "loyal": true,
+      "policy": "loyalist"
+    },
+    {
+      "name": "bot-b",
+      "power": 4,
+      "loyal": true,
+      "policy": "loyalist"
+    },
+    {
+      "name": "rival-a",
+      "power": 4,
+      "loyal": false,
+      "policy": "opportunist"
+    },
+    {
+      "name": "rival-b",
+      "power": 2,
+      "loyal": false,
+      "policy": "opportunist"
+    }
+  ]
+}

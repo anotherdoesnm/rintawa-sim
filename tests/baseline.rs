@@ -270,3 +270,20 @@ fn test_loyalists_without_a_ruler_do_nothing() -> anyhow::Result<()> {
     assert_eq!(report.final_stability, 5);
     Ok(())
 }
+
+#[test]
+fn test_template_file_reproduces_a_run() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("scenario.json");
+
+    let written = rintawa_sim::ScenarioTemplate::from_scenario("court", &scenario());
+    std::fs::write(&path, written.to_json()?)?;
+
+    let text = std::fs::read_to_string(&path)?;
+    let restored = rintawa_sim::ScenarioTemplate::from_json(&text)?.to_scenario()?;
+    let from_template = run(&restored, 4)?;
+    let from_rust = run(&scenario(), 4)?;
+
+    assert_eq!(from_template, from_rust, "a template reproduces the run");
+    Ok(())
+}

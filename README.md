@@ -56,6 +56,34 @@ caused it, and per-actor metrics.
 }
 ```
 
+## Templates
+
+A run starts from a scenario, and a scenario is a portable JSON template:
+
+```sh
+cargo run --release -- --save-template court.json
+cargo run --release -- --template examples/court.json --rounds 6
+```
+
+```json
+{
+  "schema": 1,
+  "name": "court",
+  "stability": 6,
+  "actors": [
+    { "name": "ruler", "power": 5, "loyal": false, "policy": "aggressive" },
+    { "name": "bot-a", "power": 3, "loyal": true, "policy": "loyalist" },
+    { "name": "rival-a", "power": 4, "loyal": false, "policy": "opportunist" }
+  ]
+}
+```
+
+Templates are how a run is branched: the world model has no rewind, so comparing
+scenarios means starting a new world from a reviewed starting state, not editing
+history. Loading validates the format version, stability and power ranges, actor
+counts and policy names, and a test proves that a template reproduces the run it
+was saved from. `examples/court.json` is a ready-made court scenario.
+
 ## Metrics
 
 The report separates three things that are easy to conflate:

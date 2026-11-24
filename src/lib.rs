@@ -13,6 +13,7 @@ pub mod llm;
 pub mod model;
 pub mod schemas;
 pub mod system;
+pub mod template;
 
 pub use driver::{Scenario, ScenarioActor, SimDriver, package_owner};
 pub use llm::LlmPolicy;
@@ -20,3 +21,4 @@ pub use model::{
     ActionKind, ActorView, Aggressive, Cautious, Loyalist, Opportunist, PlannedAction, Policy,
     PolicyDecision, RoundReport, SimulationReport, WorldView,
 };
+pub use template::{MAX_TEMPLATE_ACTORS, ScenarioTemplate, TEMPLATE_SCHEMA, TemplateActor};
