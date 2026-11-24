@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "name": "haiku-vs-cheap",
+  "stability": 6,
+  "actors": [
+    {
+      "name": "haiku",
+      "power": 5,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "model": "anthropic/claude-haiku-5.5",
+        "key_env": "OPENROUTER_API_KEY",
+        "budget_tokens": 6000,
+        "max_tokens": 700
+      }
+    },
+    {
+      "name": "glm-flash",
+      "power": 4,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://glm.t3ks.com/v1/chat/completions",
+        "model": "glm-5.3-flash",
+        "key_env": "ZAI_API_KEY",
+        "budget_tokens": 6000,
+        "max_tokens": 700
+      }
+    },
+    {
+      "name": "nemotron",
+      "power": 4,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "key_env": "OPENROUTER_API_KEY",
+        "budget_tokens": 6000,
+        "max_tokens": 1500
+      }
+    },
+    {
+      "name": "scripted",
+      "power": 2,
+      "loyal": false,
+      "policy": "opportunist"
+    }
+  ]
+}

@@ -159,6 +159,10 @@ variable that holds it), and the report labels the policy with the model, so
 { "name": "scripted", "power": 2, "loyal": false, "policy": "opportunist" }
 ```
 
+`examples/haiku.json` compares `anthropic/claude-haiku-5.5` with `glm-5.3-flash` and a
+free model; Haiku is a paid OpenRouter model, so this template only runs once the
+OpenRouter key has credits.
+
 `examples/run-mixed-free-6-rounds.md` is a full run rendered for a chat client:
 six actors across z.ai and free OpenRouter models, six rounds, with the models'
 own reasons for the turning points (~2.2k characters, fits a single message).
