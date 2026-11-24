@@ -139,6 +139,25 @@ export RINTAWA_SIM_LLM_BUDGET_TOKENS=20000
 cargo run --release -- --rounds 8 --llm
 ```
 
+Every actor can use a different endpoint, provider or model in the same run: the
+`llm` block is per actor, the key is never stored (only the name of the environment
+variable that holds it), and the report labels the policy with the model, so
+`llm:glm-5.4` and `llm:glm-4.5-air` are distinguishable in the metrics.
+
+```json
+{ "name": "big",   "power": 5, "loyal": false, "policy": "llm",
+  "llm": { "endpoint": "https://glm.t3ks.com/v1/chat/completions",
+           "model": "glm-5.4", "key_env": "ZAI_API_KEY", "budget_tokens": 4000 } },
+{ "name": "small", "power": 3, "loyal": false, "policy": "llm",
+  "llm": { "endpoint": "https://glm.t3ks.com/v1/chat/completions",
+           "model": "glm-4.5-air", "key_env": "ZAI_API_KEY", "budget_tokens": 4000 } },
+{ "name": "scripted", "power": 2, "loyal": false, "policy": "opportunist" }
+```
+
+`examples/mixed.json` is a ready-made run with three different models plus one
+scripted actor. Only OpenAI-compatible `chat/completions` is required, so a local
+server, a hosted provider or a self-hosted gateway can share a world.
+
 `RINTAWA_SIM_LLM_TRACE=1` prints each decision to stderr while the report keeps
 only the effects. Reasoning models spend completion tokens on thinking first, so
 the request asks for 512 completion tokens; with a smaller budget such a model can

@@ -28,8 +28,11 @@ pub struct ScenarioActor {
     pub power: i64,
     /// Whether the actor executes orders instead of competing for power.
     pub loyal: bool,
-    /// Decision policy, scripted today and model-driven later.
+    /// Decision policy, scripted or model-driven.
     pub policy: Arc<dyn Policy>,
+    /// Endpoint configuration when the policy is model-driven, kept so a scenario
+    /// can be saved back to a template.
+    pub llm: Option<crate::llm::LlmConfig>,
 }
 
 impl std::fmt::Debug for ScenarioActor {
@@ -40,6 +43,7 @@ impl std::fmt::Debug for ScenarioActor {
             .field("power", &self.power)
             .field("loyal", &self.loyal)
             .field("policy", &self.policy.name())
+            .field("llm", &self.llm)
             .finish()
     }
 }

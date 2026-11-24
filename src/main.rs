@@ -3,8 +3,8 @@
 use std::{path::PathBuf, process::ExitCode, sync::Arc};
 
 use rintawa_sim::{
-    Aggressive, Cautious, LlmPolicy, Opportunist, Scenario, ScenarioActor, ScenarioTemplate,
-    SimDriver,
+    Aggressive, Cautious, LlmConfig, LlmPolicy, Opportunist, Scenario, ScenarioActor,
+    ScenarioTemplate, SimDriver,
 };
 
 fn main() -> ExitCode {
@@ -84,8 +84,18 @@ fn run() -> anyhow::Result<()> {
 }
 
 fn default_scenario(use_llm: bool) -> anyhow::Result<Scenario> {
+    let mut llm = None;
     let first_policy: Arc<dyn rintawa_sim::Policy> = if use_llm {
-        Arc::new(LlmPolicy::from_env()?)
+        let config = LlmConfig::new(
+            std::env::var(rintawa_sim::llm::ENDPOINT_ENV)
+                .map_err(|_| anyhow::anyhow!("{} is not set", rintawa_sim::llm::ENDPOINT_ENV))?,
+            std::env::var(rintawa_sim::llm::MODEL_ENV)
+                .map_err(|_| anyhow::anyhow!("{} is not set", rintawa_sim::llm::MODEL_ENV))?,
+        )
+        .with_key_env(rintawa_sim::llm::KEY_ENV);
+        let policy = LlmPolicy::from_config(&config);
+        llm = Some(config);
+        Arc::new(policy)
     } else {
         Arc::new(Aggressive)
     };
@@ -97,18 +107,21 @@ fn default_scenario(use_llm: bool) -> anyhow::Result<Scenario> {
                 power: 4,
                 loyal: false,
                 policy: first_policy,
+                llm,
             },
             ScenarioActor {
                 name: String::from("doe"),
                 power: 3,
                 loyal: false,
                 policy: Arc::new(Opportunist),
+                llm: None,
             },
             ScenarioActor {
                 name: String::from("mart"),
                 power: 2,
                 loyal: false,
                 policy: Arc::new(Cautious),
+                llm: None,
             },
         ],
     })

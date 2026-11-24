@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     driver::{Scenario, ScenarioActor},
-    llm::LlmPolicy,
+    llm::{LlmConfig, LlmPolicy},
     model::{Aggressive, Cautious, Loyalist, Opportunist, Policy},
 };
 
@@ -32,6 +32,9 @@ pub struct TemplateActor {
     pub loyal: bool,
     /// Policy name: aggressive, cautious, opportunist, loyalist or llm.
     pub policy: String,
+    /// Endpoint and model for the `llm` policy. Never contains a key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm: Option<LlmConfig>,
 }
 
 /// Starting state of one run, suitable for saving and sharing.
@@ -61,7 +64,12 @@ impl ScenarioTemplate {
                     name: actor.name.clone(),
                     power: actor.power,
                     loyal: actor.loyal,
-                    policy: actor.policy.name().to_string(),
+                    policy: if actor.llm.is_some() {
+                        String::from("llm")
+                    } else {
+                        actor.policy.name().to_string()
+                    },
+                    llm: actor.llm.clone(),
                 })
                 .collect(),
         }
@@ -98,11 +106,13 @@ impl ScenarioTemplate {
             if actor.power < 0 {
                 anyhow::bail!("actor power must not be negative");
             }
+            let (policy, llm) = policy_for(&actor.policy, actor.llm.as_ref(), &actor.name)?;
             actors.push(ScenarioActor {
                 name: actor.name.clone(),
                 power: actor.power,
                 loyal: actor.loyal,
-                policy: policy_by_name(&actor.policy)?,
+                policy,
+                llm,
             });
         }
         Ok(Scenario {
@@ -130,15 +140,25 @@ impl ScenarioTemplate {
     }
 }
 
-fn policy_by_name(name: &str) -> anyhow::Result<Arc<dyn Policy>> {
-    match name {
-        "aggressive" => Ok(Arc::new(Aggressive)),
-        "cautious" => Ok(Arc::new(Cautious)),
-        "opportunist" => Ok(Arc::new(Opportunist)),
-        "loyalist" => Ok(Arc::new(Loyalist)),
-        "llm" => Ok(Arc::new(LlmPolicy::from_env()?)),
+fn policy_for(
+    name: &str,
+    llm: Option<&LlmConfig>,
+    actor: &str,
+) -> anyhow::Result<(Arc<dyn Policy>, Option<LlmConfig>)> {
+    let policy: Arc<dyn Policy> = match name {
+        "aggressive" => Arc::new(Aggressive),
+        "cautious" => Arc::new(Cautious),
+        "opportunist" => Arc::new(Opportunist),
+        "loyalist" => Arc::new(Loyalist),
+        "llm" => {
+            let config = llm.ok_or_else(|| {
+                anyhow::anyhow!("actor {actor} uses the llm policy but has no llm block")
+            })?;
+            Arc::new(LlmPolicy::from_config(config))
+        }
         other => anyhow::bail!("unknown policy {other}"),
-    }
+    };
+    Ok((policy, llm.cloned()))
 }
 
 #[cfg(test)]
@@ -154,12 +174,14 @@ mod tests {
                     power: 4,
                     loyal: false,
                     policy: Arc::new(Aggressive),
+                    llm: None,
                 },
                 ScenarioActor {
                     name: String::from("bot"),
                     power: 2,
                     loyal: true,
                     policy: Arc::new(Loyalist),
+                    llm: None,
                 },
             ],
         }
@@ -177,6 +199,61 @@ mod tests {
         assert!(restored.actors[1].loyal);
         assert_eq!(restored.actors[1].policy.name(), "loyalist");
         Ok(())
+    }
+
+    #[test]
+    fn test_should_keep_per_actor_models_and_never_a_key() -> anyhow::Result<()> {
+        let scenario = Scenario {
+            stability: 6,
+            actors: vec![ScenarioActor {
+                name: String::from("kitten"),
+                power: 4,
+                loyal: false,
+                policy: Arc::new(LlmPolicy::from_config(
+                    &LlmConfig::new("https://glm.t3ks.com/v1/chat/completions", "glm-5.4")
+                        .with_key_env("ZAI_API_KEY")
+                        .with_budget(4096),
+                )),
+                llm: Some(
+                    LlmConfig::new("https://glm.t3ks.com/v1/chat/completions", "glm-5.4")
+                        .with_key_env("ZAI_API_KEY")
+                        .with_budget(4096),
+                ),
+            }],
+        };
+
+        let json = ScenarioTemplate::from_scenario("mixed", &scenario).to_json()?;
+        assert!(!json.contains("sk-"), "templates never carry a key");
+        let restored = ScenarioTemplate::from_json(&json)?.to_scenario()?;
+
+        assert_eq!(restored.actors[0].policy.name(), "llm:glm-5.4");
+        assert_eq!(
+            restored.actors[0]
+                .llm
+                .as_ref()
+                .map(|llm| llm.model.as_str()),
+            Some("glm-5.4")
+        );
+        assert_eq!(
+            restored.actors[0]
+                .llm
+                .as_ref()
+                .and_then(|llm| llm.key_env.as_deref()),
+            Some("ZAI_API_KEY")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_should_reject_llm_actor_without_configuration() {
+        let mut template = ScenarioTemplate::from_scenario("court", &scenario());
+        template.actors[0].policy = String::from("llm");
+        template.actors[0].llm = None;
+        let error = template.to_scenario().unwrap_err().to_string();
+        assert!(
+            error.contains("llm block"),
+            "error explains the missing block: {error}"
+        );
     }
 
     #[test]

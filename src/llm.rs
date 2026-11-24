@@ -23,9 +23,52 @@ pub const KEY_ENV: &str = "RINTAWA_SIM_LLM_KEY";
 pub const BUDGET_ENV: &str = "RINTAWA_SIM_LLM_BUDGET_TOKENS";
 
 const DEFAULT_BUDGET_TOKENS: u64 = 20_000;
-const DEFAULT_TIMEOUT_SECONDS: u64 = 20;
 /// Completion budget per decision. Reasoning models spend part of it on thinking.
+const DEFAULT_TIMEOUT_SECONDS: u64 = 20;
 const MAX_COMPLETION_TOKENS: u32 = 512;
+
+/// Per-actor endpoint configuration carried by a template.
+///
+/// The key is never stored: `key_env` names an environment variable, so a template
+/// can be shared without leaking credentials and different actors can use different
+/// providers or models in the same run.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LlmConfig {
+    /// Chat-completions endpoint.
+    pub endpoint: String,
+    /// Model name passed to the endpoint.
+    pub model: String,
+    /// Environment variable holding the bearer token, when the endpoint needs one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_env: Option<String>,
+    /// Estimated token budget for this actor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_tokens: Option<u64>,
+}
+
+impl LlmConfig {
+    /// Creates a configuration for one endpoint and model.
+    pub fn new(endpoint: impl Into<String>, model: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            model: model.into(),
+            key_env: None,
+            budget_tokens: None,
+        }
+    }
+
+    /// Sets the environment variable that holds the bearer token.
+    pub fn with_key_env(mut self, key_env: impl Into<String>) -> Self {
+        self.key_env = Some(key_env.into());
+        self
+    }
+
+    /// Sets the estimated token budget for this actor.
+    pub const fn with_budget(mut self, budget_tokens: u64) -> Self {
+        self.budget_tokens = Some(budget_tokens);
+        self
+    }
+}
 const MAX_RESPONSE_BYTES: u64 = 64 * 1024;
 
 /// Policy that asks a chat-completions endpoint what its actor does next.
@@ -55,6 +98,24 @@ impl LlmPolicy {
             budget: AtomicU64::new(budget_tokens),
             timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
         }
+    }
+
+    /// Creates a policy from a per-actor configuration.
+    ///
+    /// A missing `key_env` variable means "no bearer token", which is normal for a
+    /// local endpoint; the endpoint then answers 401 and the policy abstains.
+    pub fn from_config(config: &LlmConfig) -> Self {
+        let api_key = config
+            .key_env
+            .as_ref()
+            .and_then(|name| std::env::var(name).ok());
+        Self::new(
+            format!("llm:{}", config.model),
+            config.endpoint.clone(),
+            config.model.clone(),
+            api_key,
+            config.budget_tokens.unwrap_or(DEFAULT_BUDGET_TOKENS),
+        )
     }
 
     /// Creates a policy from the environment.

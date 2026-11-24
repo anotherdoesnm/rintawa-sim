@@ -45,18 +45,21 @@ fn scenario() -> Scenario {
                 power: 4,
                 loyal: false,
                 policy: Arc::new(Aggressive),
+                llm: None,
             },
             ScenarioActor {
                 name: String::from("doe"),
                 power: 3,
                 loyal: false,
                 policy: Arc::new(Opportunist),
+                llm: None,
             },
             ScenarioActor {
                 name: String::from("mart"),
                 power: 2,
                 loyal: false,
                 policy: Arc::new(Cautious),
+                llm: None,
             },
         ],
     }
@@ -107,6 +110,7 @@ fn test_custom_policy_needs_no_world_changes() -> anyhow::Result<()> {
                 power: 2,
                 loyal: false,
                 policy: Arc::new(Pacifist),
+                llm: None,
             })
             .collect(),
     };
@@ -131,6 +135,7 @@ fn test_abstaining_policy_leaves_the_world_untouched() -> anyhow::Result<()> {
             power: 1,
             loyal: false,
             policy: Arc::new(Idle),
+            llm: None,
         }],
     };
 
@@ -191,30 +196,35 @@ fn test_loyalists_execute_the_rulers_order_without_competing() -> anyhow::Result
                 power: 5,
                 loyal: false,
                 policy: Arc::new(Aggressive),
+                llm: None,
             },
             ScenarioActor {
                 name: String::from("bot-a"),
                 power: 3,
                 loyal: true,
                 policy: Arc::new(Loyalist),
+                llm: None,
             },
             ScenarioActor {
                 name: String::from("bot-b"),
                 power: 4,
                 loyal: true,
                 policy: Arc::new(Loyalist),
+                llm: None,
             },
             ScenarioActor {
                 name: String::from("rival-a"),
                 power: 4,
                 loyal: false,
                 policy: Arc::new(Opportunist),
+                llm: None,
             },
             ScenarioActor {
                 name: String::from("rival-b"),
                 power: 2,
                 loyal: false,
                 policy: Arc::new(Opportunist),
+                llm: None,
             },
         ],
     };
@@ -253,12 +263,14 @@ fn test_loyalists_without_a_ruler_do_nothing() -> anyhow::Result<()> {
                 power: 3,
                 loyal: true,
                 policy: Arc::new(Loyalist),
+                llm: None,
             },
             ScenarioActor {
                 name: String::from("bot-b"),
                 power: 4,
                 loyal: true,
                 policy: Arc::new(Loyalist),
+                llm: None,
             },
         ],
     };

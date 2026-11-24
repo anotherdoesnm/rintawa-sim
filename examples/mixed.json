@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "name": "mixed-models",
+  "stability": 6,
+  "actors": [
+    {
+      "name": "big",
+      "power": 5,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://glm.t3ks.com/v1/chat/completions",
+        "model": "glm-5.4",
+        "key_env": "ZAI_API_KEY",
+        "budget_tokens": 4000
+      }
+    },
+    {
+      "name": "small",
+      "power": 3,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://glm.t3ks.com/v1/chat/completions",
+        "model": "glm-4.5-air",
+        "key_env": "ZAI_API_KEY",
+        "budget_tokens": 4000
+      }
+    },
+    {
+      "name": "flash",
+      "power": 4,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://glm.t3ks.com/v1/chat/completions",
+        "model": "glm-5.3-flash",
+        "key_env": "ZAI_API_KEY",
+        "budget_tokens": 4000
+      }
+    },
+    {
+      "name": "scripted",
+      "power": 2,
+      "loyal": false,
+      "policy": "opportunist"
+    }
+  ]
+}
