@@ -160,7 +160,25 @@ variable that holds it), and the report labels the policy with the model, so
 ```
 
 `examples/mixed.json` is a ready-made run with three different models plus one
-scripted actor. Only OpenAI-compatible `chat/completions` is required, so a local
+scripted actor. `examples/openrouter.json` does the same with free OpenRouter
+models:
+
+```sh
+export OPENROUTER_API_KEY=...
+cargo run --release -- --template examples/openrouter.json --rounds 3 --format markdown
+```
+
+Free model identifiers change over time, so check the live list first and keep the
+template in sync:
+
+```sh
+curl -s https://openrouter.ai/api/v1/models \
+  | python3 -c 'import json,sys; print("\n".join(m["id"] for m in json.load(sys.stdin)["data"] if m["id"].endswith(":free")))'
+```
+
+Free tiers are rate limited and reasoning-heavy models sometimes answer with an
+empty `content`; both surface as `Abstain` rather than as a failed run, so read the
+per-actor `acts` count before drawing conclusions about a model. Only OpenAI-compatible `chat/completions` is required, so a local
 server, a hosted provider or a self-hosted gateway can share a world.
 
 `RINTAWA_SIM_LLM_TRACE=1` prints each decision to stderr while the report keeps

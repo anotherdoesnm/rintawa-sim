@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "name": "openrouter-free",
+  "stability": 6,
+  "actors": [
+    {
+      "name": "llama",
+      "power": 5,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "model": "meta-llama/llama-3.3-70b-instruct:free",
+        "key_env": "OPENROUTER_API_KEY",
+        "budget_tokens": 4000
+      }
+    },
+    {
+      "name": "qwen",
+      "power": 4,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "model": "qwen/qwen-2.5-72b-instruct:free",
+        "key_env": "OPENROUTER_API_KEY",
+        "budget_tokens": 4000
+      }
+    },
+    {
+      "name": "mistral",
+      "power": 3,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "model": "mistralai/mistral-small-3.2-24b-instruct:free",
+        "key_env": "OPENROUTER_API_KEY",
+        "budget_tokens": 4000
+      }
+    },
+    {
+      "name": "scripted",
+      "power": 2,
+      "loyal": false,
+      "policy": "opportunist"
+    }
+  ]
+}
