@@ -16,10 +16,7 @@ impl Policy for Pacifist {
     }
 
     fn decide(&self, _view: &WorldView, _me: &ActorView) -> PolicyDecision {
-        PolicyDecision::Act(PlannedAction {
-            kind: ActionKind::Share,
-            target: None,
-        })
+        PolicyDecision::Act(PlannedAction::new(ActionKind::Share))
     }
 }
 

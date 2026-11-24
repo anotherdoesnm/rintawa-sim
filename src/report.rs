@@ -58,6 +58,36 @@ pub fn render_markdown(report: &SimulationReport) -> String {
             cell(actor.killed_by.as_deref().unwrap_or("—"))
         ));
     }
+    let explained: Vec<(&str, &crate::model::DecisionReport)> = report
+        .actors
+        .iter()
+        .flat_map(|actor| {
+            actor
+                .decisions
+                .iter()
+                .map(move |decision| (actor.name.as_str(), decision))
+        })
+        .filter(|(_, decision)| decision.note.is_some())
+        .collect();
+    if !explained.is_empty() {
+        out.push_str("\n| актор | раунд | действие | почему |\n");
+        out.push_str("|---|---:|---|---|\n");
+        for (name, decision) in explained {
+            let target = decision
+                .target
+                .as_deref()
+                .map(|target| format!(" → {target}"))
+                .unwrap_or_default();
+            out.push_str(&format!(
+                "| {} | {} | `{}{}` | {} |\n",
+                cell(name),
+                decision.round,
+                cell(&decision.action),
+                cell(&target),
+                cell(decision.note.as_deref().unwrap_or("—"))
+            ));
+        }
+    }
     out
 }
 
@@ -95,6 +125,7 @@ mod tests {
                     purges: 1,
                     kills: vec![String::from("a|b")],
                     killed_by: None,
+                    decisions: Vec::new(),
                 },
                 ActorReport {
                     name: String::from("a|b"),
@@ -106,9 +137,29 @@ mod tests {
                     purges: 0,
                     kills: Vec::new(),
                     killed_by: Some(String::from("big")),
+                    decisions: Vec::new(),
                 },
             ],
         }
+    }
+
+    #[test]
+    fn test_should_render_reasoning_as_a_separate_table() {
+        let mut report = report();
+        report.actors[0]
+            .decisions
+            .push(crate::model::DecisionReport {
+                round: 1,
+                action: String::from("grab-power"),
+                target: None,
+                note: Some(String::from("stability is high, power is cheap")),
+            });
+
+        let text = render_markdown(&report);
+
+        assert!(text.contains("| актор | раунд | действие | почему |"));
+        assert!(text.contains("stability is high, power is cheap"));
+        assert!(text.contains("| big | 1 | `grab-power` |"));
     }
 
     #[test]

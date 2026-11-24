@@ -206,6 +206,15 @@ ssh host 'cd /tmp/sim && OPENROUTER_API_KEY=... ./target/release/rintawa-sim \
 reachable only through a tunnel. Only OpenAI-compatible `chat/completions` is required, so a local
 server, a hosted provider or a self-hosted gateway can share a world.
 
+Every action carries the policy's explanation. Model-driven policies ask for a
+one-line `reason` in the same JSON object and fall back to the provider's
+`reasoning`/`reasoning_content` text when the model omits it, so a run answers "why
+did it do that" without re-running anything:
+
+| актор | раунд | действие | почему |
+|---|---:|---|---|
+| nemotron | 1 | `hoard` | Consolidate power base before challenging stronger rival |
+
 `RINTAWA_SIM_LLM_TRACE=1` prints each decision to stderr while the report keeps
 only the effects. Reasoning models spend completion tokens on thinking first, so
 the request asks for 512 completion tokens; with a smaller budget such a model can

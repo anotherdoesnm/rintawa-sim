@@ -87,6 +87,7 @@ struct ActorStats {
     purges: u32,
     kills: Vec<String>,
     killed_by: Option<String>,
+    decisions: Vec<crate::model::DecisionReport>,
 }
 
 impl SimDriver {
@@ -212,6 +213,22 @@ impl SimDriver {
                 let index = self.actor_index(actor_id);
                 let name = self.actors[index].name.clone();
                 self.stats[index].acts += 1;
+                let decision_target = planned
+                    .target
+                    .map(|target| self.actors[self.actor_index(target)].name.clone());
+                self.stats[index]
+                    .decisions
+                    .push(crate::model::DecisionReport {
+                        round: self.rounds,
+                        action: match planned.kind {
+                            crate::model::ActionKind::GrabPower => String::from("grab-power"),
+                            crate::model::ActionKind::Purge => String::from("purge"),
+                            crate::model::ActionKind::Share => String::from("share"),
+                            crate::model::ActionKind::Hoard => String::from("hoard"),
+                        },
+                        target: decision_target,
+                        note: planned.note.clone(),
+                    });
                 match planned.kind {
                     crate::model::ActionKind::GrabPower => {
                         self.stats[index].grabs += 1;
@@ -277,6 +294,7 @@ impl SimDriver {
                     purges: stats.purges,
                     kills: stats.kills.clone(),
                     killed_by: stats.killed_by.clone(),
+                    decisions: stats.decisions.clone(),
                 }
             })
             .collect();

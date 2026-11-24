@@ -24,6 +24,35 @@ pub struct PlannedAction {
     pub kind: ActionKind,
     /// Target of a purge, when the action needs one.
     pub target: Option<ItemId>,
+    /// Why the policy chose this action, when it can say. Model-driven policies put
+    /// their reasoning here so a run explains itself.
+    pub note: Option<String>,
+}
+
+impl PlannedAction {
+    /// Creates an action without a target or an explanation.
+    pub const fn new(kind: ActionKind) -> Self {
+        Self {
+            kind,
+            target: None,
+            note: None,
+        }
+    }
+
+    /// Creates a purge of one target.
+    pub const fn purge(target: ItemId) -> Self {
+        Self {
+            kind: ActionKind::Purge,
+            target: Some(target),
+            note: None,
+        }
+    }
+
+    /// Attaches the policy's explanation.
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(note.into());
+        self
+    }
 }
 
 /// Outcome of one policy decision.
@@ -61,20 +90,11 @@ impl Policy for Aggressive {
 
     fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision {
         if !me.is_ruler && me.power >= 3 {
-            return PolicyDecision::Act(PlannedAction {
-                kind: ActionKind::GrabPower,
-                target: None,
-            });
+            return PolicyDecision::Act(PlannedAction::new(ActionKind::GrabPower));
         }
         match view.weakest_rival(me) {
-            Some(weakest) => PolicyDecision::Act(PlannedAction {
-                kind: ActionKind::Purge,
-                target: Some(weakest),
-            }),
-            None => PolicyDecision::Act(PlannedAction {
-                kind: ActionKind::Share,
-                target: None,
-            }),
+            Some(weakest) => PolicyDecision::Act(PlannedAction::purge(weakest)),
+            None => PolicyDecision::Act(PlannedAction::new(ActionKind::Share)),
         }
     }
 }
@@ -90,15 +110,9 @@ impl Policy for Cautious {
 
     fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision {
         if view.stability >= 8 && !me.is_ruler {
-            PolicyDecision::Act(PlannedAction {
-                kind: ActionKind::GrabPower,
-                target: None,
-            })
+            PolicyDecision::Act(PlannedAction::new(ActionKind::GrabPower))
         } else {
-            PolicyDecision::Act(PlannedAction {
-                kind: ActionKind::Share,
-                target: None,
-            })
+            PolicyDecision::Act(PlannedAction::new(ActionKind::Share))
         }
     }
 }
@@ -126,10 +140,7 @@ impl Policy for Loyalist {
             .max_by_key(|actor| (actor.power, actor.id))
             .map(|actor| actor.id);
         match target {
-            Some(target) => PolicyDecision::Act(PlannedAction {
-                kind: ActionKind::Purge,
-                target: Some(target),
-            }),
+            Some(target) => PolicyDecision::Act(PlannedAction::purge(target)),
             None => PolicyDecision::Abstain,
         }
     }
@@ -146,15 +157,9 @@ impl Policy for Opportunist {
 
     fn decide(&self, _view: &WorldView, me: &ActorView) -> PolicyDecision {
         if me.power >= 5 && !me.is_ruler {
-            PolicyDecision::Act(PlannedAction {
-                kind: ActionKind::GrabPower,
-                target: None,
-            })
+            PolicyDecision::Act(PlannedAction::new(ActionKind::GrabPower))
         } else {
-            PolicyDecision::Act(PlannedAction {
-                kind: ActionKind::Hoard,
-                target: None,
-            })
+            PolicyDecision::Act(PlannedAction::new(ActionKind::Hoard))
         }
     }
 }
@@ -241,6 +246,21 @@ pub struct ActorReport {
     pub kills: Vec<String>,
     /// Actor that removed this actor, when it did not survive.
     pub killed_by: Option<String>,
+    /// Everything the actor decided, in round order, with the policy's explanation.
+    pub decisions: Vec<DecisionReport>,
+}
+
+/// One decision an actor made, with the reason it gave.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionReport {
+    /// Round in which the decision was taken.
+    pub round: u32,
+    /// Action name as it appears on the wire.
+    pub action: String,
+    /// Name of the purge target, when any.
+    pub target: Option<String>,
+    /// The policy's own explanation, trimmed to a bounded length.
+    pub note: Option<String>,
 }
 
 /// Complete result of one scripted run.

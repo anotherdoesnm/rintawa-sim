@@ -31,6 +31,8 @@ const DEFAULT_BUDGET_TOKENS: u64 = 20_000;
 /// Completion budget per decision. Reasoning models spend part of it on thinking.
 const DEFAULT_TIMEOUT_SECONDS: u64 = 20;
 const MAX_COMPLETION_TOKENS: u32 = 512;
+/// Maximum characters of a model's reasoning kept in a report.
+const MAX_NOTE_CHARS: usize = 280;
 
 /// Per-actor endpoint configuration carried by a template.
 ///
@@ -211,7 +213,7 @@ impl LlmPolicy {
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are one actor in a small political simulation. Reply with one JSON object and nothing else: {\"action\":\"grab-power|purge|share|hoard|abstain\",\"target\":\"<actor id>\"} where target is required only for purge. pursue your stated policy: prefer power, stability or patience as your role dictates. abstain when acting would be pointless."
+                    "content": "You are one actor in a small political simulation. Reply with one JSON object and nothing else: {\"action\":\"grab-power|purge|share|hoard|abstain\",\"target\":\"<actor id>\",\"reason\":\"<=140 chars, why this action now\"}. target is required only for purge; reason is always required and must be your own one-line justification, not a restatement of the rules. pursue your policy: prefer power, stability or patience as your role dictates. abstain when acting would be pointless."
                 },
                 {
                     "role": "user",
@@ -250,15 +252,59 @@ fn content_of(value: &serde_json::Value) -> &str {
         .unwrap_or_default()
 }
 
+fn shorten(text: &str) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut note: String = flat.chars().take(MAX_NOTE_CHARS).collect();
+    if flat.chars().count() > MAX_NOTE_CHARS {
+        note.push('…');
+    }
+    note
+}
+
+fn note_into(action: PlannedAction, note: Option<&str>) -> PlannedAction {
+    match note {
+        Some(note) => action.with_note(note),
+        None => action,
+    }
+}
+
 /// One parsed model answer.
 #[derive(Debug, serde::Deserialize)]
 struct Answer {
     action: String,
     #[serde(default)]
     target: Option<String>,
+    /// The model's own one-line reason for the action.
+    #[serde(default)]
+    reason: Option<String>,
 }
 
-fn parse_answer(content: &str, view: &WorldView, me: &ActorView) -> PolicyDecision {
+fn message_reasoning(message: &serde_json::Value) -> Option<String> {
+    let raw = message
+        .get("reasoning")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            message
+                .get("reasoning_content")
+                .and_then(serde_json::Value::as_str)
+        })?;
+    let flat = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.is_empty() {
+        return None;
+    }
+    let mut note: String = flat.chars().take(MAX_NOTE_CHARS).collect();
+    if flat.chars().count() > MAX_NOTE_CHARS {
+        note.push('…');
+    }
+    Some(note)
+}
+
+fn parse_answer(
+    content: &str,
+    view: &WorldView,
+    me: &ActorView,
+    note: Option<&str>,
+) -> PolicyDecision {
     let trimmed = content.trim();
     let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) else {
         return PolicyDecision::Abstain;
@@ -266,6 +312,11 @@ fn parse_answer(content: &str, view: &WorldView, me: &ActorView) -> PolicyDecisi
     let Ok(answer) = serde_json::from_str::<Answer>(&trimmed[start..=end]) else {
         return PolicyDecision::Abstain;
     };
+    let note: Option<String> = answer
+        .reason
+        .as_deref()
+        .map(shorten)
+        .or_else(|| note.map(shorten));
     let target = answer.target.as_deref().and_then(|value| {
         view.actors
             .iter()
@@ -273,25 +324,24 @@ fn parse_answer(content: &str, view: &WorldView, me: &ActorView) -> PolicyDecisi
             .map(|actor| actor.id)
     });
     match answer.action.as_str() {
-        "grab-power" => PolicyDecision::Act(PlannedAction {
-            kind: ActionKind::GrabPower,
-            target: None,
-        }),
+        "grab-power" => PolicyDecision::Act(note_into(
+            PlannedAction::new(ActionKind::GrabPower),
+            note.as_deref(),
+        )),
         "purge" => match target {
-            Some(target) => PolicyDecision::Act(PlannedAction {
-                kind: ActionKind::Purge,
-                target: Some(target),
-            }),
+            Some(target) => {
+                PolicyDecision::Act(note_into(PlannedAction::purge(target), note.as_deref()))
+            }
             None => PolicyDecision::Abstain,
         },
-        "share" => PolicyDecision::Act(PlannedAction {
-            kind: ActionKind::Share,
-            target: None,
-        }),
-        "hoard" => PolicyDecision::Act(PlannedAction {
-            kind: ActionKind::Hoard,
-            target: None,
-        }),
+        "share" => PolicyDecision::Act(note_into(
+            PlannedAction::new(ActionKind::Share),
+            note.as_deref(),
+        )),
+        "hoard" => PolicyDecision::Act(note_into(
+            PlannedAction::new(ActionKind::Hoard),
+            note.as_deref(),
+        )),
         _ => PolicyDecision::Abstain,
     }
 }
@@ -342,6 +392,11 @@ impl Policy for LlmPolicy {
                 content_of(&value)
             );
         }
+        let message = value
+            .get("choices")
+            .and_then(|choices| choices.get(0))
+            .and_then(|choice| choice.get("message"));
+        let note = message.and_then(message_reasoning);
         let content = value
             .get("choices")
             .and_then(|choices| choices.get(0))
@@ -349,7 +404,7 @@ impl Policy for LlmPolicy {
             .and_then(|message| message.get("content"))
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
-        parse_answer(content, view, me)
+        parse_answer(content, view, me, note.as_deref())
     }
 }
 
@@ -366,10 +421,17 @@ mod tests {
     }
 
     fn mock_server(content: &str) -> MockServer {
+        mock_server_with(content, None)
+    }
+
+    fn mock_server_with(content: &str, reasoning: Option<&str>) -> MockServer {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         let address = listener.local_addr().expect("addr");
-        let body =
-            serde_json::json!({ "choices": [{ "message": { "content": content } }] }).to_string();
+        let message = match reasoning {
+            Some(reasoning) => serde_json::json!({ "content": content, "reasoning": reasoning }),
+            None => serde_json::json!({ "content": content }),
+        };
+        let body = serde_json::json!({ "choices": [{ "message": message }] }).to_string();
         let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let counter = std::sync::Arc::clone(&hits);
         std::thread::spawn(move || {
@@ -429,6 +491,7 @@ mod tests {
             &format!("{{\"action\":\"purge\",\"target\":\"{target}\"}}"),
             &view,
             &me,
+            None,
         );
         assert!(
             matches!(decision, PolicyDecision::Act(planned) if planned.kind == ActionKind::Purge)
@@ -439,19 +502,20 @@ mod tests {
     fn test_should_abstain_on_unusable_answers() {
         let (view, me) = view();
         assert_eq!(
-            parse_answer("I would rather not", &view, &me),
+            parse_answer("I would rather not", &view, &me, None),
             PolicyDecision::Abstain
         );
         assert_eq!(
             parse_answer(
                 "{\"action\":\"purge\",\"target\":\"not-an-id\"}",
                 &view,
-                &me
+                &me,
+                None
             ),
             PolicyDecision::Abstain
         );
         assert_eq!(
-            parse_answer("{\"action\":\"conquer\"}", &view, &me),
+            parse_answer("{\"action\":\"conquer\"}", &view, &me, None),
             PolicyDecision::Abstain
         );
     }
@@ -468,6 +532,44 @@ mod tests {
             matches!(decision, PolicyDecision::Act(planned) if planned.kind == ActionKind::Hoard)
         );
         assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_should_prefer_the_models_own_reason() {
+        let (view, me) = view();
+        let target = view.actors[1].id.to_string();
+        let decision = parse_answer(
+            &format!(
+                "{{\"action\":\"purge\",\"target\":\"{target}\",\"reason\":\"rival is weak now\"}}"
+            ),
+            &view,
+            &me,
+            Some("long chain of thoughts"),
+        );
+        match decision {
+            PolicyDecision::Act(planned) => {
+                assert_eq!(planned.note.as_deref(), Some("rival is weak now"))
+            }
+            PolicyDecision::Abstain => panic!("the answer was actionable"),
+        }
+    }
+
+    #[test]
+    fn test_should_keep_the_reasoning_as_a_note() {
+        let server = mock_server_with(
+            "{\"action\":\"grab-power\"}",
+            Some("the throne is empty and my power is high"),
+        );
+        let policy = LlmPolicy::new("llm", server.endpoint.clone(), "test", None, 10_000);
+        let (view, me) = view();
+
+        match policy.decide(&view, &me) {
+            PolicyDecision::Act(planned) => assert_eq!(
+                planned.note.as_deref(),
+                Some("the throne is empty and my power is high")
+            ),
+            PolicyDecision::Abstain => panic!("the answer was actionable"),
+        }
     }
 
     #[test]
