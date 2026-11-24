@@ -159,6 +159,10 @@ variable that holds it), and the report labels the policy with the model, so
 { "name": "scripted", "power": 2, "loyal": false, "policy": "opportunist" }
 ```
 
+`examples/run-mixed-free-6-rounds.md` is a full run rendered for a chat client:
+six actors across z.ai and free OpenRouter models, six rounds, with the models'
+own reasons for the turning points (~2.2k characters, fits a single message).
+
 `examples/mixed.json` is a ready-made run with three different models plus one
 scripted actor, and `examples/mixed-free.json` mixes z.ai and free OpenRouter models
 in the same world (six actors, six rounds). `examples/openrouter.json` does the same with free OpenRouter
