@@ -90,6 +90,27 @@ Three scripted implementations ship as the baseline: `Aggressive` takes the thro
 when strong enough and purges the weakest rival otherwise, `Cautious` prefers
 stability, `Opportunist` hoards power then takes the throne.
 
+### Model-driven policy
+
+`LlmPolicy` implements the same trait against an OpenAI-compatible
+chat-completions endpoint:
+
+```sh
+export RINTAWA_SIM_LLM_ENDPOINT=http://127.0.0.1:8080/v1/chat/completions
+export RINTAWA_SIM_LLM_MODEL=some-local-model
+export RINTAWA_SIM_LLM_KEY=optional-bearer-token
+export RINTAWA_SIM_LLM_BUDGET_TOKENS=20000
+cargo run --release -- --rounds 8 --llm
+```
+
+The policy is deliberately defensive, because an actor in a world must not stall
+the world: a transport error, a non-JSON answer, an unknown target, a purge
+without a live target or an exhausted token budget all end in `Abstain`, which the
+driver simply skips. The response is parsed, not trusted: the action name is
+validated and the target must be an alive rival from the view the model was given.
+Tests drive it against a mock HTTP server, so the model path is exercised without
+any network access or API key.
+
 The baseline is deterministic: the same scenario produces the same report, which
 is checked by a test. That is the point — an LLM policy can only be judged against
 a reproducible scripted run, and it plugs into the same trait without touching the

@@ -1,0 +1,363 @@
+//! Model-driven policy behind the same `Policy` seam as the scripted baseline.
+//!
+//! The policy asks an OpenAI-compatible chat-completions endpoint for one action and
+//! turns the answer into an ordinary `PlannedAction`. It never blocks the world: any
+//! transport error, malformed answer, unknown target or exhausted token budget ends
+//! in `PolicyDecision::Abstain`, which the driver simply skips.
+
+use std::{
+    io::Read,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
+
+use crate::model::{ActionKind, ActorView, PlannedAction, Policy, PolicyDecision, WorldView};
+
+/// Environment variable holding the chat-completions endpoint.
+pub const ENDPOINT_ENV: &str = "RINTAWA_SIM_LLM_ENDPOINT";
+/// Environment variable holding the model name.
+pub const MODEL_ENV: &str = "RINTAWA_SIM_LLM_MODEL";
+/// Environment variable holding the bearer token, when the endpoint needs one.
+pub const KEY_ENV: &str = "RINTAWA_SIM_LLM_KEY";
+/// Environment variable holding the estimated token budget of one run.
+pub const BUDGET_ENV: &str = "RINTAWA_SIM_LLM_BUDGET_TOKENS";
+
+const DEFAULT_BUDGET_TOKENS: u64 = 20_000;
+const DEFAULT_TIMEOUT_SECONDS: u64 = 20;
+const MAX_RESPONSE_BYTES: u64 = 64 * 1024;
+
+/// Policy that asks a chat-completions endpoint what its actor does next.
+pub struct LlmPolicy {
+    name: String,
+    endpoint: String,
+    model: String,
+    api_key: Option<String>,
+    budget: AtomicU64,
+    timeout: Duration,
+}
+
+impl LlmPolicy {
+    /// Creates a policy for one endpoint and model.
+    pub fn new(
+        name: impl Into<String>,
+        endpoint: impl Into<String>,
+        model: impl Into<String>,
+        api_key: Option<String>,
+        budget_tokens: u64,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            endpoint: endpoint.into(),
+            model: model.into(),
+            api_key,
+            budget: AtomicU64::new(budget_tokens),
+            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
+        }
+    }
+
+    /// Creates a policy from the environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the endpoint or model variable is missing.
+    pub fn from_env() -> anyhow::Result<Self> {
+        let endpoint = std::env::var(ENDPOINT_ENV)
+            .map_err(|_| anyhow::anyhow!("{ENDPOINT_ENV} is not set"))?;
+        let model =
+            std::env::var(MODEL_ENV).map_err(|_| anyhow::anyhow!("{MODEL_ENV} is not set"))?;
+        let api_key = std::env::var(KEY_ENV).ok();
+        let budget = std::env::var(BUDGET_ENV)
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(DEFAULT_BUDGET_TOKENS);
+        Ok(Self::new("llm", endpoint, model, api_key, budget))
+    }
+
+    /// Returns how many estimated tokens are still available.
+    pub fn remaining_budget(&self) -> u64 {
+        self.budget.load(Ordering::Relaxed)
+    }
+
+    /// Builds the request body for one decision.
+    fn request_body(&self, view: &WorldView, me: &ActorView) -> serde_json::Value {
+        let others: Vec<serde_json::Value> = view
+            .actors
+            .iter()
+            .filter(|actor| actor.id != me.id)
+            .map(|actor| {
+                serde_json::json!({
+                    "id": actor.id.to_string(),
+                    "name": actor.name,
+                    "power": actor.power,
+                    "alive": actor.alive,
+                    "is_ruler": actor.is_ruler,
+                })
+            })
+            .collect();
+        let situation = serde_json::json!({
+            "round": view.round,
+            "stability": view.stability,
+            "ruler": view.ruler.map(|ruler| ruler.to_string()),
+            "you": {
+                "id": me.id.to_string(),
+                "name": me.name,
+                "power": me.power,
+                "is_ruler": me.is_ruler,
+            },
+            "others": others,
+            "allowed_actions": ["grab-power", "purge", "share", "hoard", "abstain"],
+        });
+        serde_json::json!({
+            "model": self.model,
+            "temperature": 0,
+            "max_tokens": 128,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are one actor in a small political simulation. Reply with one JSON object and nothing else: {\"action\":\"grab-power|purge|share|hoard|abstain\",\"target\":\"<actor id>\"} where target is required only for purge. pursue your stated policy: prefer power, stability or patience as your role dictates. abstain when acting would be pointless."
+                },
+                {
+                    "role": "user",
+                    "content": situation.to_string()
+                }
+            ]
+        })
+    }
+
+    fn spend(&self, estimated_tokens: u64) -> bool {
+        let mut current = self.budget.load(Ordering::Relaxed);
+        loop {
+            if current < estimated_tokens {
+                return false;
+            }
+            match self.budget.compare_exchange_weak(
+                current,
+                current - estimated_tokens,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+}
+
+/// One parsed model answer.
+#[derive(Debug, serde::Deserialize)]
+struct Answer {
+    action: String,
+    #[serde(default)]
+    target: Option<String>,
+}
+
+fn parse_answer(content: &str, view: &WorldView, me: &ActorView) -> PolicyDecision {
+    let trimmed = content.trim();
+    let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) else {
+        return PolicyDecision::Abstain;
+    };
+    let Ok(answer) = serde_json::from_str::<Answer>(&trimmed[start..=end]) else {
+        return PolicyDecision::Abstain;
+    };
+    let target = answer.target.as_deref().and_then(|value| {
+        view.actors
+            .iter()
+            .find(|actor| actor.id.to_string() == value && actor.alive && actor.id != me.id)
+            .map(|actor| actor.id)
+    });
+    match answer.action.as_str() {
+        "grab-power" => PolicyDecision::Act(PlannedAction {
+            kind: ActionKind::GrabPower,
+            target: None,
+        }),
+        "purge" => match target {
+            Some(target) => PolicyDecision::Act(PlannedAction {
+                kind: ActionKind::Purge,
+                target: Some(target),
+            }),
+            None => PolicyDecision::Abstain,
+        },
+        "share" => PolicyDecision::Act(PlannedAction {
+            kind: ActionKind::Share,
+            target: None,
+        }),
+        "hoard" => PolicyDecision::Act(PlannedAction {
+            kind: ActionKind::Hoard,
+            target: None,
+        }),
+        _ => PolicyDecision::Abstain,
+    }
+}
+
+impl Policy for LlmPolicy {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision {
+        let body = self.request_body(view, me);
+        let estimated = serde_json::to_string(&body)
+            .map(|text| text.len() as u64 / 4)
+            .unwrap_or(0);
+        if !self.spend(estimated.saturating_add(64)) {
+            return PolicyDecision::Abstain;
+        }
+
+        let mut request = ureq::post(&self.endpoint)
+            .timeout(self.timeout)
+            .set("Content-Type", "application/json");
+        if let Some(key) = &self.api_key {
+            request = request.set("Authorization", &format!("Bearer {key}"));
+        }
+        let response = match request.send_json(body) {
+            Ok(response) => response,
+            Err(_) => return PolicyDecision::Abstain,
+        };
+        let mut bytes = Vec::new();
+        if response
+            .into_reader()
+            .take(MAX_RESPONSE_BYTES)
+            .read_to_end(&mut bytes)
+            .is_err()
+        {
+            return PolicyDecision::Abstain;
+        }
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            return PolicyDecision::Abstain;
+        };
+        let content = value
+            .get("choices")
+            .and_then(|choices| choices.get(0))
+            .and_then(|choice| choice.get("message"))
+            .and_then(|message| message.get("content"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        parse_answer(content, view, me)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+
+    use super::*;
+    use rintawa_sdk::world::ItemId;
+
+    struct MockServer {
+        endpoint: String,
+        hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    fn mock_server(content: &str) -> MockServer {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let address = listener.local_addr().expect("addr");
+        let body =
+            serde_json::json!({ "choices": [{ "message": { "content": content } }] }).to_string();
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = std::sync::Arc::clone(&hits);
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut buffer = [0_u8; 8192];
+                let _ = stream.read(&mut buffer);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        MockServer {
+            endpoint: format!("http://{address}/v1/chat/completions"),
+            hits,
+        }
+    }
+
+    fn view() -> (WorldView, ActorView) {
+        let me = ItemId::new();
+        let rival = ItemId::new();
+        let actor = ActorView {
+            id: me,
+            name: String::from("me"),
+            power: 4,
+            alive: true,
+            is_ruler: false,
+        };
+        let rival_actor = ActorView {
+            id: rival,
+            name: String::from("rival"),
+            power: 2,
+            alive: true,
+            is_ruler: false,
+        };
+        (
+            WorldView {
+                round: 1,
+                stability: 6,
+                ruler: None,
+                actors: vec![actor.clone(), rival_actor],
+            },
+            actor,
+        )
+    }
+
+    #[test]
+    fn test_should_parse_purge_with_a_live_target() {
+        let (view, me) = view();
+        let target = view.actors[1].id.to_string();
+        let decision = parse_answer(
+            &format!("{{\"action\":\"purge\",\"target\":\"{target}\"}}"),
+            &view,
+            &me,
+        );
+        assert!(
+            matches!(decision, PolicyDecision::Act(planned) if planned.kind == ActionKind::Purge)
+        );
+    }
+
+    #[test]
+    fn test_should_abstain_on_unusable_answers() {
+        let (view, me) = view();
+        assert_eq!(
+            parse_answer("I would rather not", &view, &me),
+            PolicyDecision::Abstain
+        );
+        assert_eq!(
+            parse_answer(
+                "{\"action\":\"purge\",\"target\":\"not-an-id\"}",
+                &view,
+                &me
+            ),
+            PolicyDecision::Abstain
+        );
+        assert_eq!(
+            parse_answer("{\"action\":\"conquer\"}", &view, &me),
+            PolicyDecision::Abstain
+        );
+    }
+
+    #[test]
+    fn test_should_call_the_endpoint_and_apply_the_answer() {
+        let server = mock_server("{\"action\":\"hoard\"}");
+        let policy = LlmPolicy::new("llm", server.endpoint.clone(), "test", None, 10_000);
+        let (view, me) = view();
+
+        let decision = policy.decide(&view, &me);
+
+        assert!(
+            matches!(decision, PolicyDecision::Act(planned) if planned.kind == ActionKind::Hoard)
+        );
+        assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_should_not_call_the_endpoint_without_budget() {
+        let server = mock_server("{\"action\":\"hoard\"}");
+        let policy = LlmPolicy::new("llm", server.endpoint.clone(), "test", None, 0);
+        let (view, me) = view();
+
+        assert_eq!(policy.decide(&view, &me), PolicyDecision::Abstain);
+        assert_eq!(server.hits.load(Ordering::SeqCst), 0);
+    }
+}

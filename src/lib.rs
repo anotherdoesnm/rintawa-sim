@@ -9,11 +9,13 @@
 #![warn(missing_docs, rustdoc::broken_intra_doc_links)]
 
 pub mod driver;
+pub mod llm;
 pub mod model;
 pub mod schemas;
 pub mod system;
 
 pub use driver::{Scenario, ScenarioActor, SimDriver, package_owner};
+pub use llm::LlmPolicy;
 pub use model::{
     ActionKind, ActorView, Aggressive, Cautious, Opportunist, PlannedAction, Policy,
     PolicyDecision, RoundReport, SimulationReport, WorldView,
