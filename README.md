@@ -214,6 +214,14 @@ content, so an `llm` block may raise its own budget:
 { "model": "liquid/lfm-3-1.7b:free", "max_tokens": 1500 }
 ```
 
+## Providers
+
+Any OpenAI-compatible `chat/completions` endpoint works, one per actor. Besides
+OpenRouter and z.ai, `examples/bothub.json` targets BotHub
+(`https://bothub.chat/api/v2/openai/v1`), which is reachable from networks where
+OpenRouter refuses the request; put its key in `BOTHUB_API_KEY` and check the exact
+model id with `GET /api/v2/openai/v1/models` before the first run.
+
 ## Remote runs
 
 A provider may be unreachable from the machine that owns the world: OpenRouter, for
