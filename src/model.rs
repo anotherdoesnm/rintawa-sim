@@ -113,13 +113,16 @@ impl Policy for Aggressive {
     }
 
     fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision {
-        if !me.is_ruler && me.power >= 3 {
+        if !me.is_ruler && me.power >= 3 && view.coup_allowed(me) {
             return PolicyDecision::Act(PlannedAction::new(ActionKind::GrabPower));
         }
-        match view.weakest_rival(me) {
-            Some(weakest) => PolicyDecision::Act(PlannedAction::purge(weakest)),
-            None => PolicyDecision::Act(PlannedAction::new(ActionKind::Share)),
+        if let Some(weakest) = view.weakest_rival(me)
+            && let Some(target) = view.actors.iter().find(|actor| actor.id == weakest)
+            && view.purge_allowed(me, target)
+        {
+            return PolicyDecision::Act(PlannedAction::purge(weakest));
         }
+        PolicyDecision::Act(PlannedAction::new(ActionKind::Hoard))
     }
 }
 
@@ -133,7 +136,7 @@ impl Policy for Cautious {
     }
 
     fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision {
-        if view.stability >= 8 && !me.is_ruler {
+        if view.stability >= 8 && !me.is_ruler && view.coup_allowed(me) {
             PolicyDecision::Act(PlannedAction::new(ActionKind::GrabPower))
         } else {
             PolicyDecision::Act(PlannedAction::new(ActionKind::Share))
@@ -157,6 +160,11 @@ impl Policy for Loyalist {
         if view.ruler.is_none() {
             return PolicyDecision::Abstain;
         }
+        // A loyalist defends the realm it serves: an exhausted country is shared up,
+        // not squeezed for power.
+        if view.stability == 0 {
+            return PolicyDecision::Act(PlannedAction::new(ActionKind::Share));
+        }
         let target = view
             .actors
             .iter()
@@ -164,7 +172,13 @@ impl Policy for Loyalist {
             .max_by_key(|actor| (actor.power, actor.id))
             .map(|actor| actor.id);
         match target {
-            Some(target) => PolicyDecision::Act(PlannedAction::purge(target)),
+            Some(target) => match view.actors.iter().find(|actor| actor.id == target) {
+                Some(target_view) if view.purge_allowed(me, target_view) => {
+                    PolicyDecision::Act(PlannedAction::purge(target))
+                }
+                // Not strong enough yet: build power until the order can be carried out.
+                _ => PolicyDecision::Act(PlannedAction::new(ActionKind::Hoard)),
+            },
             None => PolicyDecision::Abstain,
         }
     }
@@ -179,8 +193,8 @@ impl Policy for Opportunist {
         "opportunist"
     }
 
-    fn decide(&self, _view: &WorldView, me: &ActorView) -> PolicyDecision {
-        if me.power >= 5 && !me.is_ruler {
+    fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision {
+        if me.power >= 5 && !me.is_ruler && view.coup_allowed(me) {
             PolicyDecision::Act(PlannedAction::new(ActionKind::GrabPower))
         } else {
             PolicyDecision::Act(PlannedAction::new(ActionKind::Hoard))
@@ -228,6 +242,34 @@ impl WorldView {
             .filter(|actor| actor.alive && actor.id != me.id && !actor.loyal)
             .min_by_key(|actor| (actor.power, actor.id))
             .map(|actor| actor.id)
+    }
+
+    /// Power of the current ruler, when the throne is occupied by a living actor.
+    pub fn ruler_power(&self) -> Option<i64> {
+        let ruler = self.ruler?;
+        self.actors
+            .iter()
+            .find(|actor| actor.id == ruler && actor.alive)
+            .map(|actor| actor.power)
+    }
+
+    /// Whether a coup against the current ruler would be accepted by the world.
+    pub fn coup_allowed(&self, me: &ActorView) -> bool {
+        match self.ruler_power() {
+            None => true,
+            Some(ruler_power) => match self.rules {
+                Rules::Loose => true,
+                Rules::Strict => me.power > ruler_power,
+            },
+        }
+    }
+
+    /// Whether a purge of this target would be accepted by the world.
+    pub fn purge_allowed(&self, me: &ActorView, target: &ActorView) -> bool {
+        match self.rules {
+            Rules::Loose => true,
+            Rules::Strict => me.power >= target.power,
+        }
     }
 
     /// Returns the number of actors still alive.
