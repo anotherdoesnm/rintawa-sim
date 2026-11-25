@@ -257,7 +257,9 @@ the request asks for 512 completion tokens; with a smaller budget such a model c
 return an empty `content`, which the policy treats as `Abstain` (a real run against
 `glm-5.3-flash` did exactly that in one round).
 
-An empty or broken answer is retried once; if the second attempt is unusable too the
+A rate-limited answer (HTTP 429) is retried twice with a 2s/4s pause, because the
+free tier limits requests per minute rather than the model being broken. Any other
+empty or broken answer is retried once; if the second attempt is unusable too the
 policy returns `Unreliable` instead of pretending to abstain, and the report shows a
 per-actor `сбоев`/failures column plus an `unreliable` decision with the reason. That
 separates "the model chose to wait" from "the model did not answer at all".

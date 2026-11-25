@@ -35,6 +35,10 @@ const MAX_COMPLETION_TOKENS: u32 = 512;
 const MAX_NOTE_CHARS: usize = 280;
 /// One retry is enough to tell a flaky answer from an unusable model.
 const MAX_RETRIES: u32 = 1;
+/// Extra attempts for a rate-limited provider, with a growing pause between them.
+const MAX_RATE_LIMIT_RETRIES: u32 = 2;
+/// First pause after a 429, doubled on every further attempt.
+const RATE_LIMIT_BACKOFF: Duration = Duration::from_secs(2);
 
 /// Per-actor endpoint configuration carried by a template.
 ///
@@ -292,6 +296,12 @@ fn note_into(action: PlannedAction, note: Option<&str>) -> PlannedAction {
     }
 }
 
+/// Why one attempt produced no decision.
+struct AttemptFailure {
+    rate_limited: bool,
+    reason: String,
+}
+
 /// One parsed model answer.
 #[derive(Debug, serde::Deserialize)]
 struct Answer {
@@ -376,32 +386,48 @@ impl Policy for LlmPolicy {
     }
 
     fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision {
-        let mut last = String::new();
-        for attempt in 0..=MAX_RETRIES {
+        let trace = std::env::var_os("RINTAWA_SIM_LLM_TRACE").is_some();
+        let mut plain_retries = 0;
+        let mut rate_limit_retries = 0;
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
             match self.attempt(view, me) {
                 Ok(decision) => return decision,
-                Err(reason) => {
-                    last = reason;
-                    if attempt < MAX_RETRIES
-                        && let Some(trace) = std::env::var_os("RINTAWA_SIM_LLM_TRACE")
-                    {
-                        let _ = trace;
-                        eprintln!("llm retry for {} in round {}", me.name, view.round);
+                Err(failure) => {
+                    if failure.rate_limited && rate_limit_retries < MAX_RATE_LIMIT_RETRIES {
+                        rate_limit_retries += 1;
+                        let pause = RATE_LIMIT_BACKOFF * 2_u32.pow(rate_limit_retries - 1);
+                        if trace {
+                            eprintln!(
+                                "llm rate limited for {} in round {}, sleeping {:?}",
+                                me.name, view.round, pause
+                            );
+                        }
+                        std::thread::sleep(pause);
+                        continue;
                     }
+                    if plain_retries < MAX_RETRIES {
+                        plain_retries += 1;
+                        if trace {
+                            eprintln!("llm retry for {} in round {}", me.name, view.round);
+                        }
+                        continue;
+                    }
+                    return PolicyDecision::Unreliable {
+                        reason: format!(
+                            "no usable answer after {attempts} attempts: {}",
+                            failure.reason
+                        ),
+                    };
                 }
             }
-        }
-        PolicyDecision::Unreliable {
-            reason: format!(
-                "no usable answer after {} attempts: {last}",
-                MAX_RETRIES + 1
-            ),
         }
     }
 }
 
 impl LlmPolicy {
-    fn attempt(&self, view: &WorldView, me: &ActorView) -> Result<PolicyDecision, String> {
+    fn attempt(&self, view: &WorldView, me: &ActorView) -> Result<PolicyDecision, AttemptFailure> {
         let body = self.request_body(view, me);
         let estimated = serde_json::to_string(&body)
             .map(|text| text.len() as u64 / 4)
@@ -420,7 +446,18 @@ impl LlmPolicy {
         }
         let response = match request.send_json(body) {
             Ok(response) => response,
-            Err(error) => return Err(format!("transport failed: {error}")),
+            Err(ureq::Error::Status(429, _)) => {
+                return Err(AttemptFailure {
+                    rate_limited: true,
+                    reason: String::from("transport failed: status code 429"),
+                });
+            }
+            Err(error) => {
+                return Err(AttemptFailure {
+                    rate_limited: false,
+                    reason: format!("transport failed: {error}"),
+                });
+            }
         };
         let mut bytes = Vec::new();
         if response
@@ -429,10 +466,16 @@ impl LlmPolicy {
             .read_to_end(&mut bytes)
             .is_err()
         {
-            return Err(String::from("response body could not be read"));
+            return Err(AttemptFailure {
+                rate_limited: false,
+                reason: String::from("response body could not be read"),
+            });
         }
         let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-            return Err(String::from("response is not JSON"));
+            return Err(AttemptFailure {
+                rate_limited: false,
+                reason: String::from("response is not JSON"),
+            });
         };
         if std::env::var_os("RINTAWA_SIM_LLM_TRACE").is_some() {
             eprintln!(
@@ -455,7 +498,10 @@ impl LlmPolicy {
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
         if content.trim().is_empty() {
-            return Err(String::from("empty completion"));
+            return Err(AttemptFailure {
+                rate_limited: false,
+                reason: String::from("empty completion"),
+            });
         }
         Ok(parse_answer(content, view, me, note.as_deref()))
     }
