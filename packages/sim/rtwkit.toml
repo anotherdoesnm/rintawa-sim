@@ -1,0 +1,14 @@
+schema = 2
+
+[package]
+id = "rintawa.rtwkit.sim"
+name = "Simulation"
+version = "0.0.1"
+description = "Multi-agent political simulation on authoritative Rintawa Worlds"
+license = "GPL-3.0-only"
+authors = ["anotherdoesnm"]
+readme = "README.md"
+
+[build]
+artifact-root = "build/rtw"
+command = ["bash", "build.sh"]

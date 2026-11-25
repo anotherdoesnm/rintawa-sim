@@ -1,0 +1,21 @@
+id = "rintawa.rtwkit.sim"
+name = "Simulation"
+version = "0.0.1"
+sdk = "^0.0"
+
+[[components]]
+id = "backend"
+kind = "runtime"
+target = "rintawa.runtime.wasm-component@1"
+entry = "backend.wasm"
+required = true
+
+# The simulation reads the world through commands and projections only: it submits
+# one command per actor turn, reads the result back through a projection, and keeps
+# its own round loop in a background task.
+[components.permissions]
+runtime = [
+    "background-task",
+    "world-command-submit",
+    "world-projection-read",
+]
