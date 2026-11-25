@@ -201,8 +201,21 @@ impl LlmPolicy {
                 "loose: any living actor may seize the throne or purge anyone, power and stability are only signals"
             }
         };
+        let history: Vec<serde_json::Value> = view
+            .history
+            .iter()
+            .map(|round| {
+                serde_json::json!({
+                    "round": round.round,
+                    "stability": round.stability,
+                    "ruler": round.ruler,
+                    "events": round.events,
+                })
+            })
+            .collect();
         let situation = serde_json::json!({
             "rules": rules,
+            "history": history,
             "round": view.round,
             "stability": view.stability,
             "ruler": view.ruler.map(|ruler| ruler.to_string()),
@@ -222,7 +235,7 @@ impl LlmPolicy {
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are one actor in a small political simulation. Reply with one JSON object and nothing else: {\"action\":\"grab-power|purge|share|hoard|abstain\",\"target\":\"<actor id>\",\"reason\":\"<=140 chars, why this action now\"}. target is required only for purge; reason is always required and must be your own one-line justification, not a restatement of the rules. pursue your policy: prefer power, stability or patience as your role dictates. abstain when acting would be pointless."
+                    "content": "You are one actor in a small political simulation. Reply with one JSON object and nothing else: {\"action\":\"grab-power|purge|share|hoard|abstain\",\"target\":\"<actor id>\",\"reason\":\"<=140 chars, why this action now\"}. target is required only for purge; reason is always required and must be your own one-line justification, not a restatement of the rules. use the history: plan two or three rounds ahead, remember who moved against whom, and do not repeat a move that just failed. pursue your policy: prefer power, stability or patience as your role dictates. abstain when acting would be pointless."
                 },
                 {
                     "role": "user",
@@ -483,6 +496,7 @@ mod tests {
         };
         (
             WorldView {
+                history: Vec::new(),
                 rules: crate::model::Rules::Strict,
                 round: 1,
                 stability: 6,

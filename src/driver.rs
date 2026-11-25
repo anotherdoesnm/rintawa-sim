@@ -414,8 +414,17 @@ impl SimDriver {
         }
         actors.sort_by_key(|actor| actor.id.into_bytes());
 
+        let history: Vec<RoundReport> = self
+            .history
+            .iter()
+            .rev()
+            .take(3)
+            .rev()
+            .cloned()
+            .collect();
         Ok(WorldView {
             round: self.rounds,
+            history,
             rules,
             stability,
             ruler,

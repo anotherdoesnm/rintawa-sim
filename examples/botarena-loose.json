@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "name": "botarena-loose",
+  "rules": "loose",
+  "stability": 6,
+  "actors": [
+    {
+      "name": "grok",
+      "power": 5,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://bothub.chat/api/v2/openai/v1/chat/completions",
+        "model": "grok-4.7",
+        "key_env": "BOTHUB_API_KEY",
+        "budget_tokens": 12000,
+        "max_tokens": 800
+      }
+    },
+    {
+      "name": "gpt",
+      "power": 4,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://bothub.chat/api/v2/openai/v1/chat/completions",
+        "model": "gpt-5.4",
+        "key_env": "BOTHUB_API_KEY",
+        "budget_tokens": 12000,
+        "max_tokens": 800
+      }
+    },
+    {
+      "name": "claude",
+      "power": 4,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://bothub.chat/api/v2/openai/v1/chat/completions",
+        "model": "claude-haiku-5.5",
+        "key_env": "BOTHUB_API_KEY",
+        "budget_tokens": 12000,
+        "max_tokens": 900
+      }
+    },
+    {
+      "name": "glm54",
+      "power": 3,
+      "loyal": false,
+      "policy": "llm",
+      "llm": {
+        "endpoint": "https://glm.t3ks.com/v1/chat/completions",
+        "model": "glm-5.4",
+        "key_env": "ZAI_API_KEY",
+        "budget_tokens": 12000,
+        "max_tokens": 800
+      }
+    },
+    {
+      "name": "bot",
+      "power": 2,
+      "loyal": true,
+      "policy": "loyalist"
+    }
+  ]
+}

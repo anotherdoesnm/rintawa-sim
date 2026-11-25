@@ -232,6 +232,8 @@ pub struct WorldView {
     pub ruler: Option<ItemId>,
     /// Every actor, sorted by identity for deterministic ordering.
     pub actors: Vec<ActorView>,
+    /// Recent rounds, oldest first, so a policy can plan past one move.
+    pub history: Vec<RoundReport>,
 }
 
 impl WorldView {
