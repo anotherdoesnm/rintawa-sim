@@ -46,7 +46,7 @@ pub fn render_markdown(report: &SimulationReport) -> String {
             actor.kills.join(", ")
         };
         out.push_str(&format!(
-            "| {} | `{}` | {} | {} | {} | {} | {} | {} | {} |\n",
+            "| {} | `{}` | {} | {} | {} | {} | {} | {} | {} | {} |\n",
             cell(&actor.name),
             cell(&actor.policy),
             if actor.alive { "да" } else { "нет" },
@@ -54,6 +54,7 @@ pub fn render_markdown(report: &SimulationReport) -> String {
             actor.acts,
             actor.grabs,
             actor.purges,
+            actor.unreliable,
             cell(&kills),
             cell(actor.killed_by.as_deref().unwrap_or("—"))
         ));
@@ -127,6 +128,7 @@ mod tests {
                     kills: vec![String::from("a|b")],
                     killed_by: None,
                     decisions: Vec::new(),
+                    unreliable: 0,
                 },
                 ActorReport {
                     name: String::from("a|b"),
@@ -139,6 +141,7 @@ mod tests {
                     kills: Vec::new(),
                     killed_by: Some(String::from("big")),
                     decisions: Vec::new(),
+                    unreliable: 0,
                 },
             ],
         }

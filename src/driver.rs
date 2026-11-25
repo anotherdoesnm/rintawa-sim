@@ -96,6 +96,7 @@ struct ActorStats {
     kills: Vec<String>,
     killed_by: Option<String>,
     decisions: Vec<crate::model::DecisionReport>,
+    unreliable: u32,
 }
 
 impl SimDriver {
@@ -206,6 +207,21 @@ impl SimDriver {
                 let planned = match actor.policy.decide(&view, &me) {
                     PolicyDecision::Act(planned) => planned,
                     PolicyDecision::Abstain => continue,
+                    PolicyDecision::Unreliable { reason } => {
+                        let index = self.actor_index(actor_id);
+                        let name = self.actors[index].name.clone();
+                        self.stats[index].unreliable += 1;
+                        self.stats[index]
+                            .decisions
+                            .push(crate::model::DecisionReport {
+                                round: self.rounds,
+                                action: String::from("unreliable"),
+                                target: None,
+                                note: Some(reason.clone()),
+                            });
+                        events.push(format!("{name} unreliable: {reason}"));
+                        continue;
+                    }
                 };
                 let payload = serde_json::to_value(ActPayload {
                     state: self.state.to_string(),
@@ -330,6 +346,7 @@ impl SimDriver {
                     kills: stats.kills.clone(),
                     killed_by: stats.killed_by.clone(),
                     decisions: stats.decisions.clone(),
+                    unreliable: stats.unreliable,
                 }
             })
             .collect();
@@ -414,14 +431,7 @@ impl SimDriver {
         }
         actors.sort_by_key(|actor| actor.id.into_bytes());
 
-        let history: Vec<RoundReport> = self
-            .history
-            .iter()
-            .rev()
-            .take(3)
-            .rev()
-            .cloned()
-            .collect();
+        let history: Vec<RoundReport> = self.history.iter().rev().take(3).rev().cloned().collect();
         Ok(WorldView {
             round: self.rounds,
             history,

@@ -257,6 +257,11 @@ the request asks for 512 completion tokens; with a smaller budget such a model c
 return an empty `content`, which the policy treats as `Abstain` (a real run against
 `glm-5.3-flash` did exactly that in one round).
 
+An empty or broken answer is retried once; if the second attempt is unusable too the
+policy returns `Unreliable` instead of pretending to abstain, and the report shows a
+per-actor `сбоев`/failures column plus an `unreliable` decision with the reason. That
+separates "the model chose to wait" from "the model did not answer at all".
+
 The policy is deliberately defensive, because an actor in a world must not stall
 the world: a transport error, a non-JSON answer, an unknown target, a purge
 without a live target or an exhausted token budget all end in `Abstain`, which the

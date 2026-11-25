@@ -33,6 +33,8 @@ const DEFAULT_TIMEOUT_SECONDS: u64 = 20;
 const MAX_COMPLETION_TOKENS: u32 = 512;
 /// Maximum characters of a model's reasoning kept in a report.
 const MAX_NOTE_CHARS: usize = 280;
+/// One retry is enough to tell a flaky answer from an unusable model.
+const MAX_RETRIES: u32 = 1;
 
 /// Per-actor endpoint configuration carried by a template.
 ///
@@ -374,12 +376,38 @@ impl Policy for LlmPolicy {
     }
 
     fn decide(&self, view: &WorldView, me: &ActorView) -> PolicyDecision {
+        let mut last = String::new();
+        for attempt in 0..=MAX_RETRIES {
+            match self.attempt(view, me) {
+                Ok(decision) => return decision,
+                Err(reason) => {
+                    last = reason;
+                    if attempt < MAX_RETRIES
+                        && let Some(trace) = std::env::var_os("RINTAWA_SIM_LLM_TRACE")
+                    {
+                        let _ = trace;
+                        eprintln!("llm retry for {} in round {}", me.name, view.round);
+                    }
+                }
+            }
+        }
+        PolicyDecision::Unreliable {
+            reason: format!(
+                "no usable answer after {} attempts: {last}",
+                MAX_RETRIES + 1
+            ),
+        }
+    }
+}
+
+impl LlmPolicy {
+    fn attempt(&self, view: &WorldView, me: &ActorView) -> Result<PolicyDecision, String> {
         let body = self.request_body(view, me);
         let estimated = serde_json::to_string(&body)
             .map(|text| text.len() as u64 / 4)
             .unwrap_or(0);
         if !self.spend(estimated.saturating_add(64)) {
-            return PolicyDecision::Abstain;
+            return Ok(PolicyDecision::Abstain);
         }
 
         let mut request = self
@@ -392,7 +420,7 @@ impl Policy for LlmPolicy {
         }
         let response = match request.send_json(body) {
             Ok(response) => response,
-            Err(_) => return PolicyDecision::Abstain,
+            Err(error) => return Err(format!("transport failed: {error}")),
         };
         let mut bytes = Vec::new();
         if response
@@ -401,10 +429,10 @@ impl Policy for LlmPolicy {
             .read_to_end(&mut bytes)
             .is_err()
         {
-            return PolicyDecision::Abstain;
+            return Err(String::from("response body could not be read"));
         }
         let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-            return PolicyDecision::Abstain;
+            return Err(String::from("response is not JSON"));
         };
         if std::env::var_os("RINTAWA_SIM_LLM_TRACE").is_some() {
             eprintln!(
@@ -426,7 +454,10 @@ impl Policy for LlmPolicy {
             .and_then(|message| message.get("content"))
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
-        parse_answer(content, view, me, note.as_deref())
+        if content.trim().is_empty() {
+            return Err(String::from("empty completion"));
+        }
+        Ok(parse_answer(content, view, me, note.as_deref()))
     }
 }
 
@@ -544,6 +575,63 @@ mod tests {
         );
     }
 
+    fn mock_sequence(contents: Vec<&'static str>) -> MockServer {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let address = listener.local_addr().expect("addr");
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = std::sync::Arc::clone(&hits);
+        std::thread::spawn(move || {
+            for content in contents {
+                if let Ok((mut stream, _)) = listener.accept() {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    let body =
+                        serde_json::json!({ "choices": [{ "message": { "content": content } }] })
+                            .to_string();
+                    let mut buffer = [0_u8; 8192];
+                    let _ = stream.read(&mut buffer);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                }
+            }
+        });
+        MockServer {
+            endpoint: format!("http://{address}/v1/chat/completions"),
+            hits,
+        }
+    }
+
+    #[test]
+    fn test_should_retry_once_before_succeeding() {
+        let server = mock_sequence(vec!["", "{\"action\":\"share\"}"]);
+        let policy = LlmPolicy::new("llm", server.endpoint.clone(), "test", None, 10_000);
+        let (view, me) = view();
+
+        match policy.decide(&view, &me) {
+            PolicyDecision::Act(planned) => assert_eq!(planned.kind, ActionKind::Share),
+            other => panic!("the retry should have produced an action, got {other:?}"),
+        }
+        assert_eq!(server.hits.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_should_report_unreliable_after_two_empty_answers() {
+        let server = mock_sequence(vec!["", ""]);
+        let policy = LlmPolicy::new("llm", server.endpoint.clone(), "test", None, 10_000);
+        let (view, me) = view();
+
+        match policy.decide(&view, &me) {
+            PolicyDecision::Unreliable { reason } => {
+                assert!(reason.contains("2 attempts"), "unexpected reason: {reason}");
+            }
+            other => panic!("two empty answers are unreliable, got {other:?}"),
+        }
+        assert_eq!(server.hits.load(Ordering::SeqCst), 2);
+    }
+
     #[test]
     fn test_should_call_the_endpoint_and_apply_the_answer() {
         let server = mock_server("{\"action\":\"hoard\"}");
@@ -574,7 +662,7 @@ mod tests {
             PolicyDecision::Act(planned) => {
                 assert_eq!(planned.note.as_deref(), Some("rival is weak now"))
             }
-            PolicyDecision::Abstain => panic!("the answer was actionable"),
+            other => panic!("the answer was actionable, got {other:?}"),
         }
     }
 
@@ -592,7 +680,7 @@ mod tests {
                 planned.note.as_deref(),
                 Some("the throne is empty and my power is high")
             ),
-            PolicyDecision::Abstain => panic!("the answer was actionable"),
+            other => panic!("the answer was actionable, got {other:?}"),
         }
     }
 

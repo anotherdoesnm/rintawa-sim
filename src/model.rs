@@ -87,6 +87,11 @@ pub enum PolicyDecision {
     /// The actor does nothing this round, for example because it is unsure,
     /// out of budget or waiting for information.
     Abstain,
+    /// The policy could not produce any usable answer, even after a retry.
+    Unreliable {
+        /// Short diagnostic, never a secret.
+        reason: String,
+    },
 }
 
 /// Decision policy of one actor.
@@ -318,6 +323,8 @@ pub struct ActorReport {
     pub killed_by: Option<String>,
     /// Everything the actor decided, in round order, with the policy's explanation.
     pub decisions: Vec<DecisionReport>,
+    /// Rounds in which the policy produced no usable answer at all.
+    pub unreliable: u32,
 }
 
 /// One decision an actor made, with the reason it gave.
